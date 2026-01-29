@@ -1,0 +1,33 @@
+# Legacy files
+legacy/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Output
+*.png
+*.jpg
+*.pdf
+output*/
+
+# Data
+*.npz
+*.npy
+
+# Temp
+.ccb_config/
+*.tmp
+*.log
