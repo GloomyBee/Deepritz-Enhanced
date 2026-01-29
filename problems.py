@@ -26,10 +26,8 @@ class BaseProblem:
     def exact_solution(self, x_tensor):
         """
         计算精确解
-
         Args:
             x_tensor: 输入坐标 shape=(N, dim)
-
         Returns:
             精确解值 shape=(N, 1)
         """
@@ -38,10 +36,8 @@ class BaseProblem:
     def exact_gradient(self, x_tensor):
         """
         计算精确解的梯度
-
         Args:
             x_tensor: 输入坐标 shape=(N, dim)
-
         Returns:
             梯度值 shape=(N, dim)
         """
@@ -50,10 +46,8 @@ class BaseProblem:
     def source_term(self, x_tensor):
         """
         计算源项
-
         Args:
             x_tensor: 输入坐标 shape=(N, dim)
-
         Returns:
             源项值 shape=(N, 1)
         """
@@ -62,10 +56,8 @@ class BaseProblem:
     def boundary_condition(self, x_tensor):
         """
         计算边界条件（默认使用精确解）
-
         Args:
             x_tensor: 边界点坐标 shape=(N, dim)
-
         Returns:
             边界值 shape=(N, 1)
         """

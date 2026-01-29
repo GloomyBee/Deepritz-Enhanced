@@ -486,3 +486,109 @@ class SCNITrainer(DeepRitzTrainer):
 
         elapsed = time.time() - start_time
         print(f"训练完成！用时: {elapsed:.2f}s")
+
+
+class PINNTrainer:
+    """
+    PINN训练器（强形式残差 + 边界约束）
+    Loss = mean((Δu + f)^2) + beta_bc * mean((u - g)^2)
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        problem,
+        sampler,
+        optimizer: torch.optim.Optimizer,
+        device: str = 'cpu',
+        beta_bc: float = 100.0
+    ):
+        self.model = model.to(device)
+        self.problem = problem
+        self.sampler = sampler
+        self.optimizer = optimizer
+        self.device = device
+        self.beta_bc = beta_bc
+
+        self.error_evaluator = ErrorEvaluator(problem)
+        self.history = {
+            'steps': [],
+            'loss': [],
+            'pde': [],
+            'boundary': [],
+            'l2_error': [],
+            'h1_error': []
+        }
+
+    @staticmethod
+    def _laplacian(u: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        """Compute Laplacian of scalar u(x) with autograd."""
+        grads = torch.autograd.grad(u, x, torch.ones_like(u), create_graph=True)[0]
+        lap = 0.0
+        for d in range(grads.shape[1]):
+            g = grads[:, d:d + 1]
+            g2 = torch.autograd.grad(g, x, torch.ones_like(g), create_graph=True)[0][:, d:d + 1]
+            lap = lap + g2
+        return lap
+
+    def train(
+        self,
+        n_steps: int = 2000,
+        batch_domain: int = 1000,
+        batch_boundary: int = 400,
+        log_interval: int = 100,
+        eval_interval: int = 200,
+        n_eval_points: int = 2000
+    ):
+        print(f"开始PINN训练 (设备: {self.device})...")
+        start_time = time.time()
+
+        for step in range(n_steps + 1):
+            x_dom = torch.tensor(self.sampler.sample_domain(batch_domain), dtype=torch.float32, device=self.device)
+            x_dom.requires_grad_(True)
+
+            if hasattr(self.problem, "sample_boundary"):
+                x_bd = self.problem.sample_boundary(batch_boundary, device=self.device)
+            else:
+                x_bd = torch.tensor(self.sampler.sample_boundary(batch_boundary), dtype=torch.float32, device=self.device)
+
+            u_dom = self.model(x_dom)
+            lap = self._laplacian(u_dom, x_dom)
+            f_val = self.problem.source_term(x_dom)
+            res = -(lap) - f_val
+            loss_pde = torch.mean(res ** 2)
+
+            u_bd = self.model(x_bd)
+            g_bd = self.problem.boundary_condition(x_bd)
+            if g_bd is None:
+                raise ValueError("boundary_condition returned None; please define Dirichlet boundary values.")
+            loss_bc = torch.mean((u_bd - g_bd) ** 2)
+
+            loss = loss_pde + self.beta_bc * loss_bc
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+
+            if step % log_interval == 0:
+                print(f"Step {step}: Loss={loss.item():.6f} (PDE={loss_pde.item():.2e}, BC={loss_bc.item():.2e})")
+
+            if step % eval_interval == 0:
+                x_eval = torch.tensor(self.sampler.sample_domain(n_eval_points), dtype=torch.float32, device=self.device)
+                l2_err = self.error_evaluator.compute_l2_error(self.model, x_eval, self.device)
+                h1_err = self.error_evaluator.compute_h1_error(self.model, x_eval, self.device)
+
+                self.history['steps'].append(step)
+                self.history['loss'].append(loss.item())
+                self.history['pde'].append(loss_pde.item())
+                self.history['boundary'].append(loss_bc.item())
+                self.history['l2_error'].append(l2_err)
+                self.history['h1_error'].append(h1_err)
+
+                print(f"   -> L2: {l2_err:.2e}, H1: {h1_err:.2e}")
+
+        elapsed = time.time() - start_time
+        print(f"训练完成！用时: {elapsed:.2f}s")
+
+    def get_history(self):
+        return self.history

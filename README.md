@@ -98,6 +98,90 @@ Deepritz Enhanced/
 - `plot_training_history`: 训练历史曲线
 - `plot_square_triplet`: 预测/解析/误差三联图
 
+## 算例命名规范
+
+为了系统化管理算例，本项目采用统一的命名规范，文件名包含完整的技术栈信息。
+
+### 命名格式
+
+**Deep Ritz / VPINN**（需要积分器）：
+```
+{framework}_{network}_{integration}_{problem}_{variant}.py
+```
+
+**PINN**（直接计算残差，省略积分维度）：
+```
+{framework}_{network}_{problem}_{variant}.py
+```
+
+### 维度词汇表
+
+#### 1. Framework（基础框架）
+- `deepritz` - Deep Ritz方法（变分形式，最小化能量泛函）
+- `pinn` - 物理信息神经网络（强形式，最小化PDE残差）
+- `vpinn` - 变分物理信息神经网络
+- `fem` - 有限元法（参考基准）
+
+#### 2. Network（神经网络结构）
+- `mlp` - 多层感知机（全连接网络）
+- `resnet` - 残差网络（带残差连接的MLP）
+- `kan` - Kolmogorov-Arnold网络（B样条基函数）
+- `kan_serial` - 串行KAN（粗糙+精细两阶段）
+- `rbf` - 径向基函数网络
+- `rkpm` - 再生核粒子法网络
+
+#### 3. Integration（积分方式，PINN省略）
+- `mc` - 蒙特卡洛积分（随机采样）
+- `gauss` - 高斯积分（背景网格）
+- `scni` - 稳定协调节点积分（Voronoi单元）
+
+#### 4. Problem（问题类型）
+- `poisson` - Poisson方程
+- `heat` - 热传导方程
+- `sinusoidal` - 正弦解析解问题
+- `linear` - 线性问题
+- `gaussian` - 高斯峰问题
+
+#### 5. Variant（问题变体）
+- `disk` - 圆盘域
+- `square` - 方形域
+- `trapezoid` - 梯形域
+- `patch` - 分片试验
+- `peak` - 高梯度峰值问题
+
+### 命名示例
+
+```python
+# Deep Ritz方法示例
+deepritz_mlp_mc_poisson_disk.py          # Deep Ritz + MLP + 蒙特卡洛 + Poisson + 圆盘域
+deepritz_resnet_gauss_sinusoidal_square.py  # Deep Ritz + ResNet + 高斯积分 + 正弦 + 方形域
+deepritz_rkpm_scni_linear_patch.py       # Deep Ritz + RKPM + SCNI + 线性 + 分片试验
+
+# PINN方法示例（省略积分维度）
+pinn_mlp_poisson_square.py               # PINN + MLP + Poisson + 方形域
+pinn_kan_linear_patch.py                 # PINN + KAN + 线性 + 分片试验
+pinn_kan_serial_sinusoidal_square.py    # PINN + 串行KAN + 正弦 + 方形域
+
+# 高级组合
+deepritz_kan_mc_gaussian_peak.py         # Deep Ritz + KAN + 蒙特卡洛 + 高斯峰
+vpinn_resnet_gauss_heat_trapezoid.py    # VPINN + ResNet + 高斯积分 + 热传导 + 梯形域
+```
+
+### 命名规则
+
+1. **全部小写**：所有字母使用小写
+2. **下划线分隔**：各维度之间用下划线 `_` 连接
+3. **不省略维度**：除PINN的积分维度外，其他维度必须填写
+4. **词汇标准化**：严格使用词汇表中的标准词汇
+5. **信息完整性**：文件名应包含足够信息以理解算例的完整技术栈
+
+### 优点
+
+- ✅ **信息完整**：一眼看出方法、网络、积分、问题的完整组合
+- ✅ **易于对比**：方便对比不同方法在同一问题上的表现
+- ✅ **便于搜索**：可以按任意维度搜索和筛选算例
+- ✅ **规范统一**：避免命名混乱，便于团队协作
+
 ## 使用示例
 
 ```python

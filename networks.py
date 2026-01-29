@@ -242,6 +242,110 @@ class KANNet(nn.Module):
 
 
 # ==========================================
+# 4b. KAN样条层（B样条基函数）
+# ==========================================
+def extend_grid(grid: torch.Tensor, k_extend: int = 0) -> torch.Tensor:
+    """Extend uniform grid by k_extend knots on each side."""
+    h = (grid[:, [-1]] - grid[:, [0]]) / (grid.shape[1] - 1)
+    for _ in range(k_extend):
+        grid = torch.cat([grid[:, [0]] - h, grid], dim=1)
+        grid = torch.cat([grid, grid[:, [-1]] + h], dim=1)
+    return grid
+
+
+def B_batch(x: torch.Tensor, grid: torch.Tensor, k: int = 0) -> torch.Tensor:
+    """Recursive B-spline basis evaluation (batch)."""
+    x = x.unsqueeze(dim=2)
+    grid = grid.unsqueeze(dim=0)
+    if k == 0:
+        value = (x >= grid[:, :, :-1]) * (x < grid[:, :, 1:])
+    else:
+        B_km1 = B_batch(x[:, :, 0], grid=grid[0], k=k - 1)
+        value = (x - grid[:, :, :-(k + 1)]) / (grid[:, :, k:-1] - grid[:, :, :-(k + 1)]) * B_km1[:, :, :-1] + \
+                (grid[:, :, k + 1:] - x) / (grid[:, :, k + 1:] - grid[:, :, 1:(-k)]) * B_km1[:, :, 1:]
+    return torch.nan_to_num(value)
+
+
+class KANSplineLayer(nn.Module):
+    """B-spline based KAN layer."""
+
+    def __init__(self, in_dim: int, out_dim: int, num: int = 5, k: int = 3, grid_range=(-0.2, 1.2)):
+        super().__init__()
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        self.num = num
+        self.k = k
+
+        grid = torch.linspace(grid_range[0], grid_range[1], steps=num + 1)[None, :].expand(self.in_dim, num + 1)
+        grid = extend_grid(grid, k_extend=k)
+        self.register_buffer("grid", grid)
+
+        num_coef = self.grid.shape[1] - k - 1
+        self.coef = nn.Parameter(torch.randn(in_dim, out_dim, num_coef) * 0.1)
+        self.scale_base = nn.Parameter(torch.ones(in_dim, out_dim) * 0.1)
+        self.base_fun = nn.SiLU()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        base = self.base_fun(x)
+        y_base = torch.einsum("bi,io->bo", base, self.scale_base)
+        b_splines = B_batch(x, self.grid, k=self.k)
+        y_spline = torch.einsum("bik,iok->bo", b_splines, self.coef)
+        return y_base + y_spline
+
+
+class KANSplineNet(nn.Module):
+    """Simple KAN spline network: [in] -> KANSplineLayer -> Linear -> [out]."""
+
+    def __init__(self, input_dim=2, hidden_dim=8, output_dim=1, num=5, k=3, grid_range=(-0.2, 1.2)):
+        super().__init__()
+        self.kan = KANSplineLayer(in_dim=input_dim, out_dim=hidden_dim, num=num, k=k, grid_range=grid_range)
+        self.out = nn.Linear(hidden_dim, output_dim, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.out(self.kan(x))
+
+
+class KANSerialPINN(nn.Module):
+    """Serial-filter KAN PINN: u = u_c + u_f."""
+
+    def __init__(self, grid_range=(-0.2, 1.2)):
+        super().__init__()
+        self.kan_coarse = KANSplineLayer(in_dim=2, out_dim=8, num=3, k=2, grid_range=grid_range)
+        self.out_coarse = nn.Linear(8, 1, bias=False)
+
+        self.kan_fine = KANSplineLayer(in_dim=2, out_dim=16, num=20, k=3, grid_range=grid_range)
+        self.out_fine = nn.Linear(16, 1, bias=False)
+        nn.init.constant_(self.out_fine.weight, 0.0)
+
+    def coarse(self, x: torch.Tensor) -> torch.Tensor:
+        return self.out_coarse(self.kan_coarse(x))
+
+    def fine(self, x: torch.Tensor) -> torch.Tensor:
+        return self.out_fine(self.kan_fine(x))
+
+    def forward(self, x: torch.Tensor):
+        uc = self.coarse(x)
+        uf = self.fine(x)
+        return uc, uf
+
+    def total(self, x: torch.Tensor) -> torch.Tensor:
+        uc, uf = self.forward(x)
+        return uc + uf
+
+    def freeze_coarse_params(self) -> None:
+        for p in self.kan_coarse.parameters():
+            p.requires_grad_(False)
+        for p in self.out_coarse.parameters():
+            p.requires_grad_(False)
+
+    def unfreeze_coarse_params(self) -> None:
+        for p in self.kan_coarse.parameters():
+            p.requires_grad_(True)
+        for p in self.out_coarse.parameters():
+            p.requires_grad_(True)
+
+
+# ==========================================
 # 5. RKPM网络（再生核粒子法网络）
 # ==========================================
 class RKPMLayer(nn.Module):
