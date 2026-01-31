@@ -6,77 +6,113 @@ Strong form PINN with KANSplineNet.
 import sys
 sys.path.append("..")
 
+import os
 import numpy as np
 import torch
+from pathlib import Path
 
 from problems import LinearPatchProblem
 from samplers import SquareSampler
 from networks import KANSplineNet
 from trainers import PINNTrainer
-from visualizers import plot_square_triplet, plot_error_history
+from visualizers import plot_square_triplet, plot_training_history, get_example_output_subdir
+import visualizers
 
 
-def main():
-    torch.manual_seed(42)
-    np.random.seed(42)
+# ============================================================================
+# 0. Project initialization (seed, device, paths)
+# ============================================================================
+torch.manual_seed(42)
+np.random.seed(42)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Device: {device}")
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Device: {device}")
 
-    problem = LinearPatchProblem()
-    sampler = SquareSampler(x_range=(0, 1), y_range=(0, 1))
-    model = KANSplineNet(input_dim=2, hidden_dim=8, output_dim=1, num=5, k=3, grid_range=(-0.2, 1.2)).to(device)
+# Output directory management - use absolute path
+ROOT = Path(__file__).resolve().parents[1]
+visualizers.OUTPUT_DIR = str(ROOT / "output")
+output_subdir = get_example_output_subdir(__file__)
+print(f"Output directory: {visualizers.OUTPUT_DIR}/{output_subdir}/")
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
-    trainer = PINNTrainer(
-        model=model,
-        problem=problem,
-        sampler=sampler,
-        optimizer=optimizer,
-        device=device,
-        beta_bc=100.0
-    )
+# ============================================================================
+# 1. Problem definition
+# ============================================================================
+problem = LinearPatchProblem()
+print(f"Problem: {problem.name}")
+print("Domain: [0,1] x [0,1]")
+print("Exact: u = x + y")
+print("Target error: < 1e-8")
 
-    print("Training...")
-    trainer.train(
-        n_steps=2000,
-        batch_domain=1000,
-        batch_boundary=400,
-        log_interval=200,
-        eval_interval=200,
-        n_eval_points=2000
-    )
+# ============================================================================
+# 2. Sampler
+# ============================================================================
+sampler = SquareSampler(x_range=(0, 1), y_range=(0, 1))
 
-    history = trainer.get_history()
+# ============================================================================
+# 3. Model
+# ============================================================================
+model = KANSplineNet(input_dim=2, hidden_dim=8, output_dim=1, num=5, k=3, grid_range=(-0.2, 1.2)).to(device)
+print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # Visualization
-    x = np.linspace(0, 1, 200)
-    y = np.linspace(0, 1, 200)
-    X, Y = np.meshgrid(x, y)
-    pts = torch.tensor(np.column_stack([X.ravel(), Y.ravel()]), dtype=torch.float32, device=device)
+# ============================================================================
+# 4. Optimizer
+# ============================================================================
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 
-    with torch.no_grad():
-        pred = model(pts).cpu().numpy().reshape(X.shape)
-        exact = problem.exact_solution(pts).cpu().numpy().reshape(X.shape)
+# ============================================================================
+# 5. Trainer
+# ============================================================================
+trainer = PINNTrainer(
+    model=model,
+    problem=problem,
+    sampler=sampler,
+    optimizer=optimizer,
+    device=device,
+    beta_bc=100.0
+)
 
-    plot_square_triplet(
-        X, Y, pred, exact,
-        title_prefix="KAN PINN (Patch Test)",
-        val_clim=(0.0, 2.0),
-        err_vmax=0.01,
-        filename="kan_pinn_patch_field.png"
-    )
+print("\nTraining...")
+history = trainer.train(
+    n_steps=2000,
+    batch_domain=1000,
+    batch_boundary=400,
+    log_interval=200,
+    eval_interval=200,
+    n_eval_points=2000
+)
 
-    if len(history["steps"]) > 0:
-        plot_error_history(
-            np.array(history["steps"]),
-            np.array(history["l2_error"]),
-            np.array(history["h1_error"]),
-            title="KAN PINN Patch Test Errors",
-            filename="kan_pinn_patch_errors.png",
-            ylim=(1e-6, 1.0)
-        )
+# ============================================================================
+# 6. Visualization
+# ============================================================================
+print("\nGenerating visualizations...")
 
+# Generate test grid
+res = 200
+x = np.linspace(0, 1, res)
+y = np.linspace(0, 1, res)
+X, Y = np.meshgrid(x, y)
+pts = torch.tensor(np.column_stack([X.ravel(), Y.ravel()]), dtype=torch.float32, device=device)
 
-if __name__ == "__main__":
-    main()
+# Prediction and exact solution
+model.eval()
+with torch.no_grad():
+    pred = model(pts).cpu().numpy().reshape(X.shape)
+    exact = problem.exact_solution(pts).cpu().numpy().reshape(X.shape)
+
+# Plot triplet
+plot_square_triplet(
+    X, Y, pred, exact,
+    title_prefix="KAN PINN (Patch Test)",
+    val_clim=(0.0, 2.0),
+    err_vmax=0.01,
+    filename="solution_triplet.png",
+    subdir=output_subdir
+)
+
+# Plot training history
+plot_training_history(history, filename="training_history.png", subdir=output_subdir)
+
+# Save training history data
+trainer.save_history(os.path.join(visualizers.OUTPUT_DIR, output_subdir, "history.npz"))
+
+print("\nDone.")

@@ -10,7 +10,9 @@ import torch
 import numpy as np
 from scipy.spatial import Voronoi
 
-
+# ==========================================
+# 1. 蒙特卡洛积分器
+# ==========================================
 class MonteCarloIntegrator:
     """
     蒙特卡洛积分器
@@ -45,7 +47,9 @@ class MonteCarloIntegrator:
         """
         return torch.mean(integrand_values) * self.area
 
-
+# ==========================================
+# 2. 高斯积分器
+# ==========================================
 class GaussIntegrator:
     """
     高斯积分器（背景网格）
@@ -124,7 +128,9 @@ class GaussIntegrator:
             weights = self.get_weights_tensor(integrand_values.device)
         return torch.sum(integrand_values * weights)
 
-
+# ==========================================
+# 3. Voronoi图及SCNI积分器
+# ==========================================
 class SCNIIntegrator:
     """
     SCNI积分器（Stabilized Conforming Nodal Integration）

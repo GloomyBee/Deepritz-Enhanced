@@ -318,7 +318,7 @@ class DeepRitzTrainer:
             eval_interval: 误差评估间隔
             n_eval_points: 评估点数量
         """
-        print(f"开始训练 (设备: {self.device})...")
+        print(f"Starting training (device: {self.device})...")
         start_time = time.time()
 
         # 准备边界点
@@ -352,9 +352,9 @@ class DeepRitzTrainer:
 
             # 记录
             if step % log_interval == 0:
-                print(f"Step {step}: Loss={loss_dict['total'].item():.5f}, "
-                      f"Energy={loss_dict['energy'].item():.5f}, "
-                      f"BC={loss_dict['boundary'].item():.5f}")
+                print(f"Step {step:6d} | total={loss_dict['total'].item():.5e} | "
+                      f"energy={loss_dict['energy'].item():.5e} | "
+                      f"bc={loss_dict['boundary'].item():.5e}")
 
             # 误差评估
             if step % eval_interval == 0:
@@ -369,14 +369,38 @@ class DeepRitzTrainer:
                 self.history['l2_error'].append(l2_err)
                 self.history['h1_error'].append(h1_err)
 
-                print(f"   -> L2 Error: {l2_err:.2e}, H1 Error: {h1_err:.2e}")
+                print(f"           | L2={l2_err:.2e} | H1={h1_err:.2e}")
 
         elapsed = time.time() - start_time
-        print(f"训练完成！用时: {elapsed:.2f}s ({elapsed/n_steps*1000:.2f}ms/step)")
+        print(f"Training completed! Time: {elapsed:.2f}s ({elapsed/n_steps*1000:.2f}ms/step)")
+
+        return self.history
 
     def get_history(self):
         """返回训练历史"""
         return self.history
+
+    def save_history(self, filepath: str):
+        """
+        保存训练历史到文件
+
+        Args:
+            filepath: 保存路径（如 "output/example_output/history.npz"）
+        """
+        import os
+        dirname = os.path.dirname(filepath)
+        if dirname:  # Only create directory if dirname is not empty
+            os.makedirs(dirname, exist_ok=True)
+        np.savez(
+            filepath,
+            steps=self.history['steps'],
+            loss=self.history['loss'],
+            energy=self.history.get('energy', []),
+            boundary=self.history.get('boundary', []),
+            l2_error=self.history['l2_error'],
+            h1_error=self.history['h1_error']
+        )
+        print(f"Training history saved: {filepath}")
 
 
 class SCNITrainer(DeepRitzTrainer):
@@ -448,7 +472,7 @@ class SCNITrainer(DeepRitzTrainer):
 
     def train(self, n_steps=2000, x_boundary=None, log_interval=100, eval_interval=100):
         """SCNI训练主循环"""
-        print(f"开始SCNI训练 (设备: {self.device})...")
+        print(f"Starting SCNI training (device: {self.device})...")
         start_time = time.time()
 
         if x_boundary is None:
@@ -470,7 +494,9 @@ class SCNITrainer(DeepRitzTrainer):
 
             # 记录和评估
             if step % log_interval == 0:
-                print(f"Step {step}: Loss={loss_dict['total'].item():.5f}")
+                print(f"Step {step:6d} | total={loss_dict['total'].item():.5e} | "
+                      f"energy={loss_dict['energy'].item():.5e} | "
+                      f"bc={loss_dict['boundary'].item():.5e}")
 
             if step % eval_interval == 0:
                 x_eval = torch.rand(500, 2, device=self.device)
@@ -482,10 +508,12 @@ class SCNITrainer(DeepRitzTrainer):
                 self.history['l2_error'].append(l2_err)
                 self.history['h1_error'].append(h1_err)
 
-                print(f"   -> L2: {l2_err:.2e}, H1: {h1_err:.2e}")
+                print(f"           | L2={l2_err:.2e} | H1={h1_err:.2e}")
 
         elapsed = time.time() - start_time
-        print(f"训练完成！用时: {elapsed:.2f}s")
+        print(f"Training completed! Time: {elapsed:.2f}s")
+
+        return self.history
 
 
 class PINNTrainer:
@@ -540,7 +568,7 @@ class PINNTrainer:
         eval_interval: int = 200,
         n_eval_points: int = 2000
     ):
-        print(f"开始PINN训练 (设备: {self.device})...")
+        print(f"Starting PINN training (device: {self.device})...")
         start_time = time.time()
 
         for step in range(n_steps + 1):
@@ -571,7 +599,9 @@ class PINNTrainer:
             self.optimizer.step()
 
             if step % log_interval == 0:
-                print(f"Step {step}: Loss={loss.item():.6f} (PDE={loss_pde.item():.2e}, BC={loss_bc.item():.2e})")
+                print(f"Step {step:6d} | total={loss.item():.5e} | "
+                      f"pde={loss_pde.item():.5e} | "
+                      f"bc={loss_bc.item():.5e}")
 
             if step % eval_interval == 0:
                 x_eval = torch.tensor(self.sampler.sample_domain(n_eval_points), dtype=torch.float32, device=self.device)
@@ -585,10 +615,385 @@ class PINNTrainer:
                 self.history['l2_error'].append(l2_err)
                 self.history['h1_error'].append(h1_err)
 
-                print(f"   -> L2: {l2_err:.2e}, H1: {h1_err:.2e}")
+                print(f"           | L2={l2_err:.2e} | H1={h1_err:.2e}")
 
         elapsed = time.time() - start_time
-        print(f"训练完成！用时: {elapsed:.2f}s")
+        print(f"Training completed! Time: {elapsed:.2f}s")
+
+        return self.history
 
     def get_history(self):
         return self.history
+
+    def save_history(self, filepath: str):
+        """
+        保存训练历史到文件
+
+        Args:
+            filepath: 保存路径（如 "output/example_output/history.npz"）
+        """
+        import os
+        dirname = os.path.dirname(filepath)
+        if dirname:  # Only create directory if dirname is not empty
+            os.makedirs(dirname, exist_ok=True)
+        np.savez(
+            filepath,
+            steps=self.history['steps'],
+            loss=self.history['loss'],
+            pde=self.history.get('pde', []),
+            boundary=self.history.get('boundary', []),
+            l2_error=self.history['l2_error'],
+            h1_error=self.history['h1_error']
+        )
+        print(f"Training history saved: {filepath}")
+
+
+class SerialKANTrainer:
+    """
+    Serial KAN PINN Trainer (Two-phase training: coarse + fine)
+    Implements coarse-to-fine decomposition with frozen coarse network in phase 2.
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        problem,
+        sampler,
+        optimizer_coarse: torch.optim.Optimizer,
+        optimizer_fine: torch.optim.Optimizer,
+        device: str = 'cpu',
+        beta_bc: float = 100.0,
+        lambda_fine_reg: float = 0.0,
+        lambda_fine_bc: float = 1.0
+    ):
+        """
+        Args:
+            model: KANSerialPINN model with coarse/fine/total methods
+            problem: Problem definition
+            sampler: Domain/boundary sampler
+            optimizer_coarse: Optimizer for coarse network
+            optimizer_fine: Optimizer for fine network
+            device: Computing device
+            beta_bc: Boundary condition penalty coefficient
+            lambda_fine_reg: Fine network regularization coefficient
+            lambda_fine_bc: Fine network boundary penalty coefficient
+        """
+        self.model = model.to(device)
+        self.problem = problem
+        self.sampler = sampler
+        self.optimizer_coarse = optimizer_coarse
+        self.optimizer_fine = optimizer_fine
+        self.device = device
+        self.beta_bc = beta_bc
+        self.lambda_fine_reg = lambda_fine_reg
+        self.lambda_fine_bc = lambda_fine_bc
+
+        self.error_evaluator = ErrorEvaluator(problem)
+        self.history = {
+            'steps': [],
+            'loss': [],
+            'pde': [],
+            'boundary': [],
+            'l2_error': [],
+            'h1_error': []
+        }
+
+    def _evaluate_model(self, model_fn, x_eval):
+        """
+        Evaluate model using a specific forward function (coarse or total).
+
+        Args:
+            model_fn: Model function to use (e.g., self.model.coarse or self.model.total)
+            x_eval: Evaluation points
+
+        Returns:
+            l2_error, h1_error: L2 and H1 errors
+        """
+        # L2 error
+        self.model.eval()
+        with torch.no_grad():
+            u_pred = model_fn(x_eval)
+            u_exact = self.problem.exact_solution(x_eval)
+            diff = u_pred - u_exact
+            indicator = self.problem.domain_indicator(x_eval)
+            l2_error = torch.sqrt(torch.mean((diff ** 2) * indicator) * self.problem.area_domain).item()
+
+        # H1 error
+        x_eval_grad = x_eval.clone().requires_grad_(True)
+        u_pred_grad = model_fn(x_eval_grad)
+        grad_pred = torch.autograd.grad(
+            outputs=u_pred_grad, inputs=x_eval_grad,
+            grad_outputs=torch.ones_like(u_pred_grad),
+            create_graph=False, retain_graph=False
+        )[0]
+        grad_exact = self.problem.exact_gradient(x_eval)
+        diff_grad = grad_pred - grad_exact
+        indicator = self.problem.domain_indicator(x_eval)
+        h1_error = torch.sqrt(torch.mean(torch.sum(diff_grad ** 2, dim=1, keepdim=True) * indicator)
+                              * self.problem.area_domain).item()
+
+        self.model.train()
+        return l2_error, h1_error
+
+    def train_pretrain(self, n_steps: int, batch_boundary: int, log_interval: int = 100):
+        """
+        Pretrain coarse network on boundary conditions.
+
+        Args:
+            n_steps: Number of pretrain steps
+            batch_boundary: Boundary batch size
+            log_interval: Logging interval
+        """
+        print(f">>> Pretrain: {n_steps} steps")
+        self.model.unfreeze_coarse_params()
+
+        for step in range(n_steps + 1):
+            x_bd = torch.tensor(self.sampler.sample_boundary(batch_boundary),
+                              dtype=torch.float32, device=self.device)
+            u_pred = self.model.coarse(x_bd)
+            u_exact = self.problem.exact_solution(x_bd)
+            loss_pre = torch.mean((u_pred - u_exact) ** 2)
+
+            self.optimizer_coarse.zero_grad()
+            loss_pre.backward()
+            self.optimizer_coarse.step()
+
+            if step % log_interval == 0:
+                print(f"Pretrain step {step}: BC loss={loss_pre.item():.6e}")
+
+    def train_phase1_coarse(
+        self,
+        n_steps: int,
+        batch_domain: int,
+        batch_boundary: int,
+        log_interval: int = 100,
+        eval_interval: int = 200,
+        n_eval_points: int = 2000,
+        pretrain_steps: int = 0
+    ):
+        """
+        Phase 1: Train coarse network with PDE residual + boundary loss.
+
+        Args:
+            n_steps: Number of training steps
+            batch_domain: Domain batch size
+            batch_boundary: Boundary batch size
+            log_interval: Logging interval
+            eval_interval: Evaluation interval
+            n_eval_points: Number of evaluation points
+            pretrain_steps: Offset for step counting (to continue from pretrain)
+        """
+        print(f"\n>>> Phase 1: COARSE {n_steps} steps")
+
+        for step in range(n_steps + 1):
+            x_dom = torch.tensor(self.sampler.sample_domain(batch_domain),
+                               dtype=torch.float32, device=self.device)
+            x_dom.requires_grad_(True)
+            x_bd = torch.tensor(self.sampler.sample_boundary(batch_boundary),
+                              dtype=torch.float32, device=self.device)
+
+            # PDE residual
+            u_dom = self.model.coarse(x_dom)
+            lap = PINNTrainer._laplacian(u_dom, x_dom)
+            res = -lap - self.problem.source_term(x_dom)
+            loss_pde = torch.mean(res ** 2)
+
+            # Boundary loss
+            u_bd = self.model.coarse(x_bd)
+            loss_bc = torch.mean((u_bd - self.problem.exact_solution(x_bd)) ** 2)
+
+            # Total loss
+            loss = loss_pde + self.beta_bc * loss_bc
+
+            self.optimizer_coarse.zero_grad()
+            loss.backward()
+            self.optimizer_coarse.step()
+
+            # Logging
+            if step % log_interval == 0:
+                print(f"Step {step:6d} | total={loss.item():.5e} | "
+                      f"pde={loss_pde.item():.5e} | "
+                      f"bc={loss_bc.item():.5e}")
+
+            # Evaluation
+            if step % eval_interval == 0:
+                x_eval = torch.tensor(self.sampler.sample_domain(n_eval_points),
+                                    dtype=torch.float32, device=self.device)
+                l2_err, h1_err = self._evaluate_model(self.model.coarse, x_eval)
+
+                self.history['steps'].append(pretrain_steps + step)
+                self.history['loss'].append(loss.item())
+                self.history['pde'].append(loss_pde.item())
+                self.history['boundary'].append(loss_bc.item())
+                self.history['l2_error'].append(l2_err)
+                self.history['h1_error'].append(h1_err)
+
+                print(f"           | L2={l2_err:.2e} | H1={h1_err:.2e}")
+
+    def train_phase2_fine(
+        self,
+        n_steps: int,
+        batch_domain: int,
+        batch_boundary: int,
+        scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
+        scheduler_interval: int = 1000,
+        log_interval: int = 100,
+        eval_interval: int = 200,
+        n_eval_points: int = 2000,
+        phase1_steps: int = 0
+    ):
+        """
+        Phase 2: Train fine network with coarse frozen.
+
+        Args:
+            n_steps: Number of training steps
+            batch_domain: Domain batch size
+            batch_boundary: Boundary batch size
+            scheduler: Learning rate scheduler (optional)
+            scheduler_interval: Scheduler step interval
+            log_interval: Logging interval
+            eval_interval: Evaluation interval
+            n_eval_points: Number of evaluation points
+            phase1_steps: Offset for step counting (to continue from phase 1)
+        """
+        print(f"\n>>> Phase 2: FINE {n_steps} steps")
+        self.model.freeze_coarse_params()
+
+        for step in range(n_steps + 1):
+            x_dom = torch.tensor(self.sampler.sample_domain(batch_domain),
+                               dtype=torch.float32, device=self.device)
+            x_dom.requires_grad_(True)
+            x_bd = torch.tensor(self.sampler.sample_boundary(batch_boundary),
+                              dtype=torch.float32, device=self.device)
+
+            # PDE residual (total = coarse + fine)
+            u_dom_total = self.model.total(x_dom)
+            lap = PINNTrainer._laplacian(u_dom_total, x_dom)
+            res = -lap - self.problem.source_term(x_dom)
+            loss_pde = torch.mean(res ** 2)
+
+            # Boundary loss (total)
+            u_bd_total = self.model.total(x_bd)
+            loss_bc = torch.mean((u_bd_total - self.problem.exact_solution(x_bd)) ** 2)
+
+            # Fine network regularization
+            u_f_dom = self.model.fine(x_dom)
+            u_f_bd = self.model.fine(x_bd)
+            loss_freg = torch.mean(u_f_dom ** 2)
+            loss_fbc = torch.mean(u_f_bd ** 2)
+
+            # Total loss
+            loss = loss_pde + self.beta_bc * loss_bc
+            loss = loss + self.lambda_fine_reg * loss_freg + self.lambda_fine_bc * loss_fbc
+
+            self.optimizer_fine.zero_grad()
+            loss.backward()
+            self.optimizer_fine.step()
+
+            # Learning rate scheduling
+            if scheduler is not None and step > 0 and step % scheduler_interval == 0:
+                scheduler.step()
+
+            # Logging
+            if step % log_interval == 0:
+                print(f"Step {step:6d} | total={loss.item():.5e} | "
+                      f"pde={loss_pde.item():.5e} | "
+                      f"bc={loss_bc.item():.5e}")
+
+            # Evaluation
+            if step % eval_interval == 0:
+                x_eval = torch.tensor(self.sampler.sample_domain(n_eval_points),
+                                    dtype=torch.float32, device=self.device)
+                l2_err, h1_err = self._evaluate_model(self.model.total, x_eval)
+
+                self.history['steps'].append(phase1_steps + step)
+                self.history['loss'].append(loss.item())
+                self.history['pde'].append(loss_pde.item())
+                self.history['boundary'].append(loss_bc.item())
+                self.history['l2_error'].append(l2_err)
+                self.history['h1_error'].append(h1_err)
+
+                print(f"           | L2={l2_err:.2e} | H1={h1_err:.2e}")
+
+    def train(
+        self,
+        pretrain_steps: int = 500,
+        phase1_steps: int = 1000,
+        phase2_steps: int = 4000,
+        batch_domain: int = 2000,
+        batch_boundary: int = 500,
+        scheduler_fine: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
+        scheduler_interval: int = 1000,
+        log_interval: int = 100,
+        eval_interval: int = 200,
+        n_eval_points: int = 2000
+    ):
+        """
+        Main training loop with three phases: pretrain → phase1_coarse → phase2_fine.
+
+        Args:
+            pretrain_steps: Number of pretrain steps
+            phase1_steps: Number of phase 1 steps
+            phase2_steps: Number of phase 2 steps
+            batch_domain: Domain batch size
+            batch_boundary: Boundary batch size
+            scheduler_fine: Learning rate scheduler for fine network
+            scheduler_interval: Scheduler step interval
+            log_interval: Logging interval
+            eval_interval: Evaluation interval
+            n_eval_points: Number of evaluation points
+
+        Returns:
+            history: Training history dictionary
+        """
+        print(f"Starting Serial KAN PINN training (device: {self.device})...")
+        start_time = time.time()
+
+        # Phase 0: Pretrain
+        self.train_pretrain(pretrain_steps, batch_boundary, log_interval=100)
+
+        # Phase 1: Coarse
+        self.train_phase1_coarse(
+            phase1_steps, batch_domain, batch_boundary,
+            log_interval, eval_interval, n_eval_points,
+            pretrain_steps=pretrain_steps
+        )
+
+        # Phase 2: Fine
+        self.train_phase2_fine(
+            phase2_steps, batch_domain, batch_boundary,
+            scheduler_fine, scheduler_interval,
+            log_interval, eval_interval, n_eval_points,
+            phase1_steps=pretrain_steps + phase1_steps
+        )
+
+        elapsed = time.time() - start_time
+        print(f"Training completed! Time: {elapsed:.2f}s")
+
+        return self.history
+
+    def get_history(self):
+        """Return training history."""
+        return self.history
+
+    def save_history(self, filepath: str):
+        """
+        Save training history to file.
+
+        Args:
+            filepath: Save path (e.g., "output/example_output/history.npz")
+        """
+        import os
+        dirname = os.path.dirname(filepath)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
+        np.savez(
+            filepath,
+            steps=self.history['steps'],
+            loss=self.history['loss'],
+            pde=self.history.get('pde', []),
+            boundary=self.history.get('boundary', []),
+            l2_error=self.history['l2_error'],
+            h1_error=self.history['h1_error']
+        )
+        print(f"Training history saved: {filepath}")

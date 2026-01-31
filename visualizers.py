@@ -1,11 +1,11 @@
 """
-可视化模块 (Visualizers)
-提供统一的可视化工具用于Deep Ritz方法：
-1. plot_solution - 解的可视化（2D等值线图）
-2. plot_training_history - 训练历史曲线
-3. plot_comparison - 预测/真实/误差三联图
-4. plot_temperature_field - 温度场可视化（梯形域）
-5. plot_particles - 粒子分布可视化
+Visualizers Module
+Provides unified visualization tools for Deep Ritz method:
+1. plot_solution - Solution visualization (2D contour plot)
+2. plot_training_history - Training history curves
+3. plot_comparison - Prediction/exact/error triplet
+4. plot_temperature_field - Temperature field visualization (trapezoid domain)
+5. plot_particles - Particle distribution visualization
 """
 
 import os
@@ -16,20 +16,39 @@ from typing import Optional, Tuple
 
 
 # ==========================================
-# 全局配置
+# Global Configuration
 # ==========================================
 OUTPUT_DIR = "output"
 GLOBAL_FIGSIZE = (10, 8)
 GLOBAL_CMAP = "inferno"
 
+
+def get_example_output_subdir(example_path: str) -> str:
+    """
+    Generate standard output subdirectory name from example file path
+
+    Args:
+        example_path: Example file path (e.g., __file__ or "example_poisson_disk.py")
+
+    Returns:
+        Subdirectory name (e.g., "example_poisson_disk_output")
+
+    Example:
+        >>> subdir = get_example_output_subdir(__file__)
+        >>> plot_training_history(history, subdir=subdir)
+    """
+    name = os.path.splitext(os.path.basename(example_path))[0]
+    return f"{name}_output"
+
+
 def _get_save_path(filename: str, subdir: Optional[str] = None) -> str:
     """
-    内部辅助函��：组合输出路径
+    Internal helper function: combine output path
     Args:
-        filename: 文件名
-        subdir: 子目录（可选）
+        filename: Filename
+        subdir: Subdirectory (optional)
     Returns:
-        完整路径
+        Complete path
     """
     if subdir:
         full_dir = os.path.join(OUTPUT_DIR, subdir)
@@ -42,6 +61,7 @@ def _get_save_path(filename: str, subdir: Optional[str] = None) -> str:
 # ==========================================
 # 1. 正方形域可视化
 # ==========================================
+
 def plot_square_triplet(
     X: np.ndarray,
     Y: np.ndarray,
@@ -82,29 +102,29 @@ def plot_square_triplet(
 
     fig, axes = plt.subplots(1, 3, figsize=(14, 4))
 
-    # 子图1: 预测值
+    # Plot 1: Prediction
     c0 = axes[0].contourf(X, Y, pred, levels=val_levels, cmap=cmap,
                           vmin=v_min, vmax=v_max, extend='both')
     cb0 = plt.colorbar(c0, ax=axes[0], fraction=0.046, pad=0.04, ticks=val_ticks)
-    axes[0].set_title(f"{title_prefix} 预测")
+    axes[0].set_title(f"{title_prefix} Prediction")
     axes[0].set_aspect("equal")
     axes[0].set_xlabel("x")
     axes[0].set_ylabel("y")
 
-    # 子图2: 真实值
+    # Plot 2: Exact Solution
     c1 = axes[1].contourf(X, Y, exact, levels=val_levels, cmap=cmap,
                           vmin=v_min, vmax=v_max, extend='both')
     cb1 = plt.colorbar(c1, ax=axes[1], fraction=0.046, pad=0.04, ticks=val_ticks)
-    axes[1].set_title("解析解")
+    axes[1].set_title("Exact Solution")
     axes[1].set_aspect("equal")
     axes[1].set_xlabel("x")
     axes[1].set_ylabel("y")
 
-    # 子图3: 误差
+    # Plot 3: Absolute Error
     c2 = axes[2].contourf(X, Y, error, levels=err_levels, cmap="magma",
                           vmin=0, vmax=err_vmax, extend='max')
     cb2 = plt.colorbar(c2, ax=axes[2], fraction=0.046, pad=0.04, ticks=err_ticks)
-    axes[2].set_title("绝对误差")
+    axes[2].set_title("Absolute Error")
     axes[2].set_aspect("equal")
     axes[2].set_xlabel("x")
     axes[2].set_ylabel("y")
@@ -113,7 +133,7 @@ def plot_square_triplet(
 
     save_path = _get_save_path(filename, subdir)
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    print(f"已保存: {save_path}")
+    print(f"Saved: {save_path}")
     plt.close(fig)
 
 
@@ -144,7 +164,7 @@ def plot_solution(
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 
     c = ax.contourf(X, Y, U, levels=100, cmap=cmap, vmin=vmin, vmax=vmax)
-    plt.colorbar(c, ax=ax, label="值")
+    plt.colorbar(c, ax=ax, label="Value")
 
     ax.set_aspect("equal")
     ax.set_xlabel("x")
@@ -155,34 +175,35 @@ def plot_solution(
 
     save_path = _get_save_path(filename, subdir)
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    print(f"已保存: {save_path}")
+    print(f"Saved: {save_path}")
     plt.close(fig)
 
 
 # ==========================================
 # 2. 训练历史可视化
 # ==========================================
+
 def plot_error_history(
     steps: np.ndarray,
     l2: np.ndarray,
     h1: np.ndarray,
     *,
-    title: str = "误差收敛曲线",
+    title: str = "Error Convergence",
     filename: str = "error_history.png",
     ylim: Optional[Tuple[float, float]] = None,
     subdir: Optional[str] = None
 ):
     """
-    绘制误差收敛曲线
+    Plot error convergence curves
 
     Args:
-        steps: 训练步数
-        l2: L2误差
-        h1: H1误差
-        title: 标题
-        filename: 文件名
-        ylim: Y轴范围
-        subdir: 子目录
+        steps: Training steps
+        l2: L2 error
+        h1: H1 error
+        title: Title
+        filename: Filename
+        ylim: Y-axis range
+        subdir: Subdirectory
     """
     steps = np.asarray(steps)
     l2 = np.asarray(l2)
@@ -190,15 +211,15 @@ def plot_error_history(
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 5))
 
-    # 绘制曲线
-    ax.semilogy(steps, np.maximum(l2, 1e-16), label="L2误差",
+    # Plot curves
+    ax.semilogy(steps, np.maximum(l2, 1e-16), label="L2 Error",
                 linewidth=2, color='#1f77b4')
-    ax.semilogy(steps, np.maximum(h1, 1e-16), label="H1误差（半范数）",
+    ax.semilogy(steps, np.maximum(h1, 1e-16), label="H1 Error (semi-norm)",
                 linewidth=2, color='orange')
 
     ax.grid(True, which="both", ls="--", alpha=0.5)
-    ax.set_xlabel("训练步数", fontsize=12)
-    ax.set_ylabel("误差", fontsize=12)
+    ax.set_xlabel("Training Step", fontsize=12)
+    ax.set_ylabel("Error", fontsize=12)
     ax.set_title(title, fontsize=13)
     ax.legend(fontsize=12)
 
@@ -209,7 +230,7 @@ def plot_error_history(
 
     save_path = _get_save_path(filename, subdir)
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    print(f"已保存: {save_path}")
+    print(f"Saved: {save_path}")
     plt.close(fig)
 
 
@@ -220,52 +241,52 @@ def plot_training_history(
     subdir: Optional[str] = None
 ):
     """
-    绘制完整训练历史（损失+误差）
+    Plot complete training history (loss + error)
 
     Args:
-        history: 训练历史字典（包含steps, loss, l2_error, h1_error等）
-        filename: 文件名
-        subdir: 子目录
+        history: Training history dict (contains steps, loss, l2_error, h1_error, etc.)
+        filename: Filename
+        subdir: Subdirectory
     """
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     steps = np.array(history['steps'])
 
-    # 子图1: 损失
+    # Subplot 1: Loss
     ax = axes[0]
-    if 'loss' in history:
-        ax.semilogy(steps, history['loss'], label="总损失", linewidth=2)
-    if 'energy' in history:
-        ax.semilogy(steps, np.abs(history['energy']), label="能量", linewidth=2)
-    if 'boundary' in history:
-        ax.semilogy(steps, history['boundary'], label="边界损失", linewidth=2)
+    if 'loss' in history and len(history['loss']) > 0:
+        ax.semilogy(steps, history['loss'], label="Total Loss", linewidth=2)
+    if 'energy' in history and len(history['energy']) > 0:
+        ax.semilogy(steps, np.abs(history['energy']), label="Energy", linewidth=2)
+    if 'boundary' in history and len(history['boundary']) > 0:
+        ax.semilogy(steps, history['boundary'], label="Boundary Loss", linewidth=2)
 
     ax.grid(True, which="both", ls="--", alpha=0.5)
-    ax.set_xlabel("训练步数", fontsize=12)
-    ax.set_ylabel("损失", fontsize=12)
-    ax.set_title("损失曲线", fontsize=13)
+    ax.set_xlabel("Training Step", fontsize=12)
+    ax.set_ylabel("Loss", fontsize=12)
+    ax.set_title("Loss Curves", fontsize=13)
     ax.legend(fontsize=10)
 
-    # 子图2: 误差
+    # Subplot 2: Error
     ax = axes[1]
-    if 'l2_error' in history:
+    if 'l2_error' in history and len(history['l2_error']) > 0:
         ax.semilogy(steps, np.maximum(history['l2_error'], 1e-16),
-                    label="L2误差", linewidth=2, color='#1f77b4')
-    if 'h1_error' in history:
+                    label="L2 Error", linewidth=2, color='#1f77b4')
+    if 'h1_error' in history and len(history['h1_error']) > 0:
         ax.semilogy(steps, np.maximum(history['h1_error'], 1e-16),
-                    label="H1误差", linewidth=2, color='orange')
+                    label="H1 Error", linewidth=2, color='orange')
 
     ax.grid(True, which="both", ls="--", alpha=0.5)
-    ax.set_xlabel("训练步数", fontsize=12)
-    ax.set_ylabel("误差", fontsize=12)
-    ax.set_title("误差收敛", fontsize=13)
+    ax.set_xlabel("Training Step", fontsize=12)
+    ax.set_ylabel("Error", fontsize=12)
+    ax.set_title("Error Convergence", fontsize=13)
     ax.legend(fontsize=10)
 
     fig.tight_layout()
 
     save_path = _get_save_path(filename, subdir)
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    print(f"已保存: {save_path}")
+    print(f"Saved: {save_path}")
     plt.close(fig)
 
 
@@ -287,7 +308,7 @@ def plot_temperature_grid(
     Y: np.ndarray,
     T: np.ndarray,
     *,
-    title: str = "温度场",
+    title: str = "Temperature Field",
     filename: str = "temperature.png",
     vmin: float = 20.0,
     vmax: float = 28.0,
@@ -295,16 +316,16 @@ def plot_temperature_grid(
     subdir: Optional[str] = None
 ):
     """
-    绘制梯形域温度场
+    Plot trapezoid domain temperature field
 
     Args:
-        X, Y: 网格坐标
-        T: 温度值
-        title: 标题
-        filename: 文件名
-        vmin, vmax: 温度范围
-        cmap: 色图
-        subdir: 子目录
+        X, Y: Grid coordinates
+        T: Temperature values
+        title: Title
+        filename: Filename
+        vmin, vmax: Temperature range
+        cmap: Colormap
+        subdir: Subdirectory
     """
     levels = np.linspace(vmin, vmax, 101)
 
@@ -316,7 +337,7 @@ def plot_temperature_grid(
 
     c = ax.contourf(X, Y, T_plot, levels=levels, cmap=cmap, extend='both')
 
-    cbar = plt.colorbar(c, ax=ax, label="温度 (°C)")
+    cbar = plt.colorbar(c, ax=ax, label="Temperature (°C)")
     cbar.set_ticks(np.linspace(vmin, vmax, 9))
 
     plot_domain_outline(ax)
@@ -332,7 +353,7 @@ def plot_temperature_grid(
 
     save_path = _get_save_path(filename, subdir)
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    print(f"已保存: {save_path}")
+    print(f"Saved: {save_path}")
     plt.close(fig)
 
 
@@ -341,7 +362,7 @@ def plot_temperature_tri(
     elems: np.ndarray,
     U: np.ndarray,
     *,
-    title: str = "FEM温度场",
+    title: str = "FEM Temperature Field",
     filename: str = "temperature_fem.png",
     vmin: float = 20.0,
     vmax: float = 28.0,
@@ -349,17 +370,17 @@ def plot_temperature_tri(
     subdir: Optional[str] = None
 ):
     """
-    绘制FEM三角网格温度场
+    Plot FEM triangular mesh temperature field
 
     Args:
-        nodes: [N, 2] 节点坐标
-        elems: [M, 3] 单元连接
-        U: [N] 温度值
-        title: 标题
-        filename: 文件名
-        vmin, vmax: 温度范围
-        cmap: 色图
-        subdir: 子目录
+        nodes: [N, 2] Node coordinates
+        elems: [M, 3] Element connectivity
+        U: [N] Temperature values
+        title: Title
+        filename: Filename
+        vmin, vmax: Temperature range
+        cmap: Colormap
+        subdir: Subdirectory
     """
     levels = np.linspace(vmin, vmax, 101)
 
@@ -385,30 +406,30 @@ def plot_temperature_tri(
 
     save_path = _get_save_path(filename, subdir)
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    print(f"已保存: {save_path}")
+    print(f"Saved: {save_path}")
     plt.close(fig)
 
 
 # ==========================================
-# 4. 粒子/节点分布可视化
+# 4. Particle/Node Distribution Visualization
 # ==========================================
 def plot_particles(
     nodes: np.ndarray,
     *,
-    title: str = "粒子分布",
+    title: str = "Particle Distribution",
     filename: str = "particles.png",
     marker_size: int = 10,
     subdir: Optional[str] = None
 ):
     """
-    绘制粒子分布图
+    Plot particle distribution
 
     Args:
-        nodes: [N, 2] 粒子坐标
-        title: 标题
-        filename: 文件名
-        marker_size: 标记大小
-        subdir: 子目录
+        nodes: [N, 2] Particle coordinates
+        title: Title
+        filename: Filename
+        marker_size: Marker size
+        subdir: Subdirectory
     """
     fig, ax = plt.subplots(1, 1, figsize=(8, 8))
 
@@ -423,7 +444,7 @@ def plot_particles(
 
     save_path = _get_save_path(filename, subdir)
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    print(f"已保存: {save_path}")
+    print(f"Saved: {save_path}")
     plt.close(fig)
 
 
@@ -432,20 +453,20 @@ def plot_voronoi_cells(
     regions,
     vertices: np.ndarray,
     *,
-    title: str = "Voronoi单元",
+    title: str = "Voronoi Cells",
     filename: str = "voronoi.png",
     subdir: Optional[str] = None
 ):
     """
-    绘制Voronoi单元图
+    Plot Voronoi cells
 
     Args:
-        nodes: [N, 2] 粒子坐标
-        regions: Voronoi区域列表
-        vertices: Voronoi顶点坐标
-        title: 标题
-        filename: 文件名
-        subdir: 子目录
+        nodes: [N, 2] Particle coordinates
+        regions: Voronoi region list
+        vertices: Voronoi vertex coordinates
+        title: Title
+        filename: Filename
+        subdir: Subdirectory
     """
     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
 
@@ -469,12 +490,12 @@ def plot_voronoi_cells(
 
     save_path = _get_save_path(filename, subdir)
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    print(f"已保存: {save_path}")
+    print(f"Saved: {save_path}")
     plt.close(fig)
 
 
 # ==========================================
-# 5. 形函数可视化
+# 5. Shape Function Visualization
 # ==========================================
 def visualize_shape_function(
     model,
@@ -486,15 +507,15 @@ def visualize_shape_function(
     subdir: Optional[str] = None
 ):
     """
-    可视化指定节点的形函数
+    Visualize shape function of specified node
 
     Args:
-        model: 网络模型（必须有meshfree_layer或rkpm属性）
-        node_idx: 节点索引
-        device: 计算设备
-        domain_bounds: 定义域边界
-        filename: 文件名
-        subdir: 子目录
+        model: Network model (must have meshfree_layer or rkpm attribute)
+        node_idx: Node index
+        device: Computing device
+        domain_bounds: Domain boundaries
+        filename: Filename
+        subdir: Subdirectory
     """
     import torch
 
@@ -510,7 +531,7 @@ def visualize_shape_function(
 
     node_pos = nodes[node_idx]
 
-    # 生成密集网格
+    # Generate dense grid
     x_min, x_max, y_min, y_max = domain_bounds
     res = 100
     x = np.linspace(x_min, x_max, res)
@@ -519,39 +540,39 @@ def visualize_shape_function(
     grid_pts = torch.tensor(np.column_stack([X.ravel(), Y.ravel()]),
                            dtype=torch.float32, device=device)
 
-    # 计算形函数值
+    # Compute shape function values
     model.eval()
     with torch.no_grad():
         phi_vals, _, _ = layer(grid_pts)
         phi_target = phi_vals[:, node_idx].cpu().numpy().reshape(res, res)
 
-    # 绘图
+    # Plot
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
-    # 左图：2D等值线
+    # Left: 2D contour
     ax = axes[0]
     c = ax.contourf(X, Y, phi_target, levels=50, cmap='viridis')
     plt.colorbar(c, ax=ax)
-    ax.plot(node_pos[0], node_pos[1], 'r*', markersize=15, label='节点')
-    ax.set_title(f"形函数 φ_{node_idx}(x,y)")
+    ax.plot(node_pos[0], node_pos[1], 'r*', markersize=15, label='Node')
+    ax.set_title(f"Shape Function φ_{node_idx}(x,y)")
     ax.legend()
     ax.set_aspect('equal')
     ax.set_xlabel("x")
     ax.set_ylabel("y")
 
-    # 右图：径向剖面
+    # Right: Radial profile
     ax = axes[1]
     row_idx = np.argmin(np.abs(y - node_pos[1]))
     phi_slice = phi_target[row_idx, :]
     r_dist = x - node_pos[0]
 
-    ax.plot(r_dist, phi_slice, linewidth=3, label='形函数剖面')
-    ax.set_xlabel("距节点距离 (x - x_I)")
-    ax.set_ylabel("φ 值")
-    ax.set_title("径向剖面")
+    ax.plot(r_dist, phi_slice, linewidth=3, label='Shape Function Profile')
+    ax.set_xlabel("Distance from Node (x - x_I)")
+    ax.set_ylabel("φ Value")
+    ax.set_title("Radial Profile")
     ax.grid(True, linestyle='--', alpha=0.6)
 
-    # 标记支持域
+    # Mark support domain
     if hasattr(layer, 'dilation'):
         if isinstance(layer.dilation, torch.Tensor):
             if layer.dilation.numel() == 1:
@@ -560,7 +581,7 @@ def visualize_shape_function(
                 dilation = layer.dilation[node_idx].item()
         else:
             dilation = layer.dilation
-        ax.axvline(dilation, color='k', linestyle=':', label='支持域半径')
+        ax.axvline(dilation, color='k', linestyle=':', label='Support Radius')
         ax.axvline(-dilation, color='k', linestyle=':')
 
     ax.legend()
@@ -569,5 +590,5 @@ def visualize_shape_function(
 
     save_path = _get_save_path(filename, subdir)
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
-    print(f"已保存: {save_path}")
+    print(f"Saved: {save_path}")
     plt.close(fig)
