@@ -1,0 +1,373 @@
+﻿\documentclass[10pt,aspectratio=169]{beamer}
+
+\usepackage[UTF8]{ctex}
+\useinnertheme{metropolis}
+\useoutertheme{metropolis}
+\usecolortheme{metropolis}
+\usefonttheme{professionalfonts}
+\usepackage{appendixnumberbeamer}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{ragged2e}
+\usepackage{xcolor}
+
+\title{Deep-RKPM-KAN}
+\subtitle{从 1D 机制验证到 2D Poisson 收敛}
+\author{Deepritz Enhanced 项目组}
+\institute{Deepritz Enhanced}
+\date{2026-03-08}
+
+\setsansfont{Segoe UI}
+\setmonofont{Consolas}
+\setCJKmainfont{Microsoft YaHei UI}
+\setCJKsansfont{Microsoft YaHei UI}
+
+\newcommand{\smallnote}[1]{\vspace{0.3em}{\scriptsize\color{gray}#1}}
+\newcommand{\imgw}[2]{\includegraphics[width=#1\linewidth]{#2}}
+\newcommand{\imgfull}[1]{\includegraphics[width=0.92\linewidth]{#1}}
+\newcommand{\takeaway}[1]{\textbf{结论：}#1}
+
+\begin{document}
+
+\maketitle
+
+\begin{frame}{目录}
+  \setbeamertemplate{section in toc}[sections numbered]
+  \tableofcontents[hideallsubsections]
+\end{frame}
+
+\section{背景与目标}
+
+\begin{frame}{研究目标：学习可解释的 meshfree shape function}
+\begin{columns}[T,onlytextwidth]
+\column{0.54\textwidth}
+\begin{block}{核心问题}
+传统 RKPM/MLS 强结构但依赖显式局部矩阵；黑箱神经 PDE 方法优化方便但弱化了离散空间解释性。
+\end{block}
+\begin{itemize}
+  \item 我们希望直接学习具有无网格结构约束的形函数
+  \item 目标不仅是求解 PDE，还要保留 \texttt{PU}、一次重构与边界行为
+  \item 训练路径分为形函数预训练与 Deep Ritz 物理阶段
+\end{itemize}
+\column{0.42\textwidth}
+\begin{alertblock}{关键词}
+\begin{itemize}
+  \item Partition of unity
+  \item Linear reproduction
+  \item Boundary anchoring
+  \item Teacher distillation
+  \item Stability / robustness
+\end{itemize}
+\end{alertblock}
+\end{columns}
+\smallnote{叙事主线：1D 机制验证 $\rightarrow$ 2D patch test $\rightarrow$ 2D 主实验 $\rightarrow$ 稳定性与鲁棒性。}
+\end{frame}
+
+\begin{frame}{方法总图：从节点到 Deep Ritz}
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{>{\RaggedRight\arraybackslash}p{0.16\linewidth}>{\centering\arraybackslash}p{0.05\linewidth}>{\RaggedRight\arraybackslash}p{0.16\linewidth}>{\centering\arraybackslash}p{0.05\linewidth}>{\RaggedRight\arraybackslash}p{0.16\linewidth}>{\centering\arraybackslash}p{0.05\linewidth}>{\RaggedRight\arraybackslash}p{0.22\linewidth}}
+节点集 & $\rightarrow$ & 局部 KAN 母核 & $\rightarrow$ & 窗函数与归一化 & $\rightarrow$ & 形函数 $\Phi_I(x)$ 与 Deep Ritz \\
+\end{tabular}
+\end{center}
+\vspace{1em}
+\begin{itemize}
+  \item Phase A：先学习 shape function 的几何一致性
+  \item Phase B：在固定或联合优化下进入 Poisson 能量最小化
+  \item fallback、teacher、regularization 是关键稳定化机制
+\end{itemize}
+\smallnote{方法细节可对照公共模块与论文主文档。}
+\end{frame}
+
+\section{1D 机制验证}
+
+\begin{frame}{为什么先做 1D？}
+\begin{columns}[T,onlytextwidth]
+\column{0.55\textwidth}
+\begin{itemize}
+  \item 1D 更适合直接观察 shape function 的形状、边界行为与振荡
+  \item 可以清楚分辨 \texttt{softplus}、边界锚定、teacher 的作用
+  \item 是进入 2D 前的“显微镜”试验
+\end{itemize}
+\column{0.4\textwidth}
+\begin{exampleblock}{本节回答的问题}
+\begin{itemize}
+  \item 什么情况下 shape function 会失稳？
+  \item 什么机制能恢复稳定？
+  \item 哪种设计值得推广到 2D？
+\end{itemize}
+\end{exampleblock}
+\end{columns}
+\vspace{0.4em}
+\takeaway{1D 是机制验证平台，不只是预备实验。}
+\end{frame}
+
+\begin{frame}{1D baseline：基本 shape quality 已经成立}
+\begin{columns}[T,onlytextwidth]
+\column{0.47\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_1d_validation/deepritz_meshfree_kan_rkpm_1d_validation_output/shape_compare.png}
+\column{0.47\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_1d_validation/deepritz_meshfree_kan_rkpm_1d_validation_output/shape_subset_overlay.png}
+\end{columns}
+\vspace{0.3em}
+\begin{itemize}
+  \item \texttt{global\_l2}=2.26e-2
+  \item \texttt{pu\_max\_error}=1.47e-12
+  \item \texttt{linear\_reproduction\_rmse}=2.56e-3
+\end{itemize}
+\smallnote{数据来源：\texttt{output/meshfree\_kan\_rkpm\_1d\_validation/.../metrics.json}。}
+\end{frame}
+
+\begin{frame}{1D failure case：去掉 softplus 后会明显失稳}
+\begin{columns}[T,onlytextwidth]
+\column{0.47\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_1d_validation/deepritz_meshfree_kan_rkpm_1d_validation_v4_output_no_softplus_v4/shape_compare.png}
+\column{0.47\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_1d_validation/deepritz_meshfree_kan_rkpm_1d_validation_v4_output_no_softplus_v4/shape_subset_overlay.png}
+\end{columns}
+\vspace{0.3em}
+\begin{itemize}
+  \item \texttt{global\_l2}=3.435
+  \item \texttt{global\_linf}=19.295
+  \item \texttt{pu\_raw\_sum\_rmse}=1.033
+\end{itemize}
+\takeaway{单纯移除稳定化先验会导致形函数质量灾难性退化。}
+\end{frame}
+
+\begin{frame}{1D teacher 版本：结构恢复并更适合推广到 2D}
+\begin{columns}[T,onlytextwidth]
+\column{0.47\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_1d_validation/deepritz_meshfree_kan_rkpm_1d_validation_v5_output_teacher_distill_v5/shape_compare.png}
+\column{0.47\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_1d_validation/deepritz_meshfree_kan_rkpm_1d_validation_v5_output_teacher_distill_v5/shape_subset_overlay.png}
+\end{columns}
+\vspace{0.3em}
+\begin{itemize}
+  \item \texttt{global\_l2}=4.91e-2
+  \item \texttt{linear\_reproduction\_rmse}=7.50e-3
+  \item $\phi_0(0)\approx0.961,\; \phi_N(1)\approx0.954$
+\end{itemize}
+\takeaway{teacher 约束为 shape-function 学习提供了更可控的优化路径。}
+\end{frame}
+
+\begin{frame}{1D 小结：2D 设计应保留哪些机制？}
+\begin{enumerate}
+  \item 形函数学习需要结构化约束，而不是完全自由拟合
+  \item teacher、fallback、regularization 是 2D 稳定性的关键候选
+  \item 因此 2D 不只比较 PDE 误差，还要报告 \texttt{PU}、$\Lambda_h$ 与一次重构
+\end{enumerate}
+\vspace{0.5em}
+\begin{alertblock}{本节结论}
+1D 实验给出的不是最终结果，而是 2D 方案设计的依据。
+\end{alertblock}
+\end{frame}
+
+\section{2D 形函数一致性与主实验}
+
+\begin{frame}{2D patch test：先验证线性重构一致性}
+\begin{columns}[T,onlytextwidth]
+\column{0.32\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/patch_test/variant_softplus_raw_pu_bd_ns15_k2p5_seed42_paper_v1/figures/pu_heatmap.png}
+\column{0.32\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/patch_test/variant_softplus_raw_pu_bd_ns15_k2p5_seed42_paper_v1/figures/linear_x_heatmap.png}
+\column{0.32\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/patch_test/variant_softplus_raw_pu_bd_ns15_k2p5_seed42_paper_v1/figures/lambda_h_heatmap.png}
+\end{columns}
+\vspace{0.4em}
+\begin{itemize}
+  \item patch test 检验的是：$\sum_I \phi_I \approx 1$ 与一次重构是否成立
+  \item 这一步不是主 PDE 结果，而是 shape function 合法性验证
+  \item \texttt{PU residual}、\texttt{linear reproduction} 与 $\Lambda_h$ 一起报告更完整
+\end{itemize}
+\end{frame}
+
+\begin{frame}{2D patch test：为什么这一步很关键？}
+\begin{columns}[T,onlytextwidth]
+\column{0.58\textwidth}
+\begin{align*}
+\sum_I \phi_I(x,y) &\approx 1,\\
+\sum_I \phi_I(x,y)x_I &\approx x,\\
+\sum_I \phi_I(x,y)y_I &\approx y.
+\end{align*}
+\column{0.38\textwidth}
+\begin{exampleblock}{意义}
+\begin{itemize}
+  \item 常数重构成立
+  \item 一次 patch 重构成立
+  \item 说明进入 PDE 阶段前，离散空间已具备基本一致性
+\end{itemize}
+\end{exampleblock}
+\end{columns}
+\vspace{0.5em}
+\takeaway{patch test 让 2D 主实验具备更强的可解释性。}
+\end{frame}
+
+\begin{frame}{2D Poisson 主实验设定}
+\begin{columns}[T,onlytextwidth]
+\column{0.54\textwidth}
+\begin{itemize}
+  \item 问题：\texttt{sinusoidal\_poisson\_2d}
+  \item 网格规模：\texttt{n\_side = 11, 15, 21}
+  \item 当前主变体：\texttt{no\_softplus\_teacher\_reg}
+  \item 关键参数：\texttt{kappa=2.5}, \texttt{beta\_bc=500}, \texttt{gamma\_linear=1}
+\end{itemize}
+\column{0.42\textwidth}
+\begin{block}{目标}
+让 2D \texttt{L2/H1} 收敛曲线更接近论文投稿所需的展示质量，同时保持 \texttt{PU} 与 $\Lambda_h$ 的稳定。
+\end{block}
+\end{columns}
+\smallnote{当前最佳结果对应 \texttt{paper\_v3\_main} 系列输出目录。}
+\end{frame}
+
+\begin{frame}{2D 主结果：多尺度误差对比}
+\begin{columns}[T,onlytextwidth]
+\column{0.60\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/poisson_convergence/convergence_summary.png}
+\column{0.36\textwidth}
+\begin{itemize}
+  \item \texttt{n=11}: \texttt{L2}=7.19e-3\\ \texttt{H1}=2.77e-1
+  \item \texttt{n=15}: \texttt{L2}=8.53e-3\\ \texttt{H1}=2.36e-1
+  \item \texttt{n=21}: \texttt{L2}=1.15e-2\\ \texttt{H1}=2.73e-1
+\end{itemize}
+\begin{alertblock}{要点}
+\small 这页展示的是不同离散尺度下的当前最佳误差水平；目前还不宜表述为严格单调的 $h$-收敛。
+\end{alertblock}
+\end{columns}
+\end{frame}
+
+\begin{frame}{2D 主结果：同尺度下旧版到最优版的改进}
+\centering
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+尺度 & baseline \texttt{paper\_v1} & best \texttt{paper\_v3\_main} \\
+\midrule
+\texttt{n=11} & \texttt{L2: 2.58e-2}, \texttt{H1: 5.58e-1} & \texttt{L2: 7.19e-3}, \texttt{H1: 2.77e-1} \\
+\texttt{n=15} & \texttt{L2: 3.02e-2}, \texttt{H1: 5.40e-1} & \texttt{L2: 8.53e-3}, \texttt{H1: 2.36e-1} \\
+\texttt{n=21} & \texttt{L2: 2.73e-2}, \texttt{H1: 6.18e-1} & \texttt{L2: 1.15e-2}, \texttt{H1: 2.73e-1} \\
+\bottomrule
+\end{tabular}
+\vspace{0.7em}
+\begin{alertblock}{关键信息}
+同尺度对比更能说明调参收益：当前改进主要体现在误差区间明显下降，而不是已经获得漂亮的跨尺度单调收敛。
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{2D 主结果：代表性解场可视化}
+\begin{columns}[T,onlytextwidth]
+\column{0.64\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/poisson_convergence/variant_no_softplus_teacher_reg_ns15_k2p5_seed42_paper_v3_main/figures/solution_triplet.png}
+\column{0.32\textwidth}
+{\footnotesize \textbf{Phase A：shape function 预训练}}\\[-0.2em]
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/poisson_convergence/variant_no_softplus_teacher_reg_ns15_k2p5_seed42_paper_v3_main/figures/loss_curves_phase_a.png}
+\vspace{0.35em}
+
+{\footnotesize \textbf{Phase B：Poisson 能量优化}}\\[-0.2em]
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/poisson_convergence/variant_no_softplus_teacher_reg_ns15_k2p5_seed42_paper_v3_main/figures/loss_curves_phase_b.png}
+\end{columns}
+\vspace{0.4em}
+\takeaway{双图展示后，Phase A 与 Phase B 的优化目标被清晰分离，更适合答辩讲解。}
+\end{frame}
+\section{稳定性与鲁棒性}
+
+\begin{frame}{稳定性消融：teacher 与 regularization 为什么重要？}
+\begin{columns}[T,onlytextwidth]
+\column{0.60\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/stability_ablation/stability_summary.png}
+\column{0.36\textwidth}
+\begin{itemize}
+  \item \texttt{softplus\_raw\_pu\_bd}: $\Lambda_h^{\max}\approx1.00$
+  \item \texttt{no\_softplus\_raw\_pu\_bd}: $\Lambda_h^{\max}\approx14.09$
+  \item \texttt{no\_softplus\_teacher\_reg}: $\Lambda_h^{\max}\approx1.01$
+\end{itemize}
+\begin{alertblock}{要点}
+\small teacher guidance 恢复了 raw unconstrained 版本失去的稳定性。
+\end{alertblock}
+\end{columns}
+\end{frame}
+
+\begin{frame}{稳定性消融：结论如何解释？}
+\begin{columns}[T,onlytextwidth]
+\column{0.53\textwidth}
+\begin{itemize}
+  \item 不加约束地去掉 softplus，会引入明显的放大与抵消
+  \item fallback 能缓解局部覆盖退化，但 teacher 更直接约束了 shape matrix
+  \item regularization 进一步抑制原始响应过大造成的病态
+\end{itemize}
+\column{0.43\textwidth}
+\begin{exampleblock}{最重要的信号}
+$\Lambda_h$ 从 14.09 回落到接近 1，说明改进不是偶然拟合，而是结构层面的稳定恢复。
+\end{exampleblock}
+\end{columns}
+\end{frame}
+
+\begin{frame}{不规则节点鲁棒性：轻度扰动下依然可用}
+\begin{columns}[T,onlytextwidth]
+\column{0.60\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/irregular_nodes/irregular_summary.png}
+\column{0.36\textwidth}
+\begin{itemize}
+  \item \texttt{jitter=0.0}: \texttt{L2}=2.41e-2\\ \texttt{H1}=6.64e-1
+  \item \texttt{jitter=0.1}: \texttt{L2}=2.65e-2\\ \texttt{H1}=6.26e-1
+  \item \texttt{jitter=0.2}: \texttt{L2}=2.63e-2\\ \texttt{H1}=7.58e-1
+\end{itemize}
+\begin{alertblock}{要点}
+\small 中等节点扰动下，误差上升有限，说明方法具备一定鲁棒性。
+\end{alertblock}
+\end{columns}
+\end{frame}
+
+\begin{frame}{不规则节点：代表性解场}
+\begin{columns}[T,onlytextwidth]
+\column{0.64\textwidth}
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/irregular_nodes/variant_softplus_raw_pu_bd_ns15_k2p5_jit0p1_seed42_paper_v1/figures/solution_triplet.png}
+\column{0.32\textwidth}
+{\footnotesize \textbf{Phase A：shape function 预训练}}\\[-0.2em]
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/irregular_nodes/variant_softplus_raw_pu_bd_ns15_k2p5_jit0p1_seed42_paper_v1/figures/loss_curves_phase_a.png}
+\vspace{0.35em}
+
+{\footnotesize \textbf{Phase B：Poisson 能量优化}}\\[-0.2em]
+\imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/irregular_nodes/variant_softplus_raw_pu_bd_ns15_k2p5_jit0p1_seed42_paper_v1/figures/loss_curves_phase_b.png}
+\end{columns}
+\vspace{0.4em}
+\takeaway{双图训练轨迹更容易说明：即使在轻度节点扰动下，两阶段优化依然稳定。}
+\end{frame}
+\section{总结}
+
+\begin{frame}{总结}
+\begin{enumerate}
+  \item 1D 实验明确了 shape-function 学习所需的关键稳定化机制
+  \item 2D patch test 说明离散空间在进入 PDE 前已具备 PU 与一次重构一致性
+  \item 2D \texttt{no\_softplus\_teacher\_reg} 是当前最强投稿候选配置
+\end{enumerate}
+\vspace{0.5em}
+\begin{alertblock}{当前最强信息}
+这个方法的优势不仅体现在误差更低，还体现在：稳定、可解释、可做系统消融。
+\end{alertblock}
+\end{frame}
+
+\begin{frame}[standout]
+谢谢！\\[0.5em]
+答疑时可继续展示 appendix 中的更多参数扫描与对比图。
+\end{frame}
+
+\appendix
+
+\begin{frame}{Backup：可继续补充的内容}
+\begin{itemize}
+  \item 更多 \texttt{paper\_v1 / paper\_v2 / paper\_v3} 参数演化表
+  \item \texttt{n=11,15,21} 三组 \texttt{solution\_triplet} 横向对照
+  \item 1D 更多版本的 \texttt{shape\_compare} 与边界锚定指标
+  \item 与 RKPM / FEM / PINN 的进一步横向比较
+\end{itemize}
+\end{frame}
+
+\end{document}
+
+
+
+
+
