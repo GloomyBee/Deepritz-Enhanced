@@ -1,4 +1,4 @@
-# Legacy files
+﻿# Legacy files
 legacy/
 
 # Python
@@ -31,3 +31,33 @@ output*/
 .ccb_config/
 *.tmp
 *.log
+
+# Local tools
+.venv/
+.agent/
+.omx/
+
+# LaTeX intermediates
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex*
+*.toc
+*.xdv
+
+# Windows oddities
+nul
+
+# Third-party presentation/theme sources
+paper/mtheme-master/
+paper/mtheme-master.zip
+
+# Local paper build/save-error artifacts
+*-SAVE-ERROR

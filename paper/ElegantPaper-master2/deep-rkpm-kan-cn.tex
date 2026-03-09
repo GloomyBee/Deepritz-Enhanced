@@ -1,0 +1,317 @@
+﻿\documentclass[lang=cn,a4paper]{elegantpaper}
+
+\title{Deep-RKPM-KAN：可学习无网格形函数的 Deep Ritz 求解框架}
+\author{Deepritz Enhanced 项目组}
+\institute{Deepritz Enhanced}
+\date{\zhdate{2026/03/03}}
+\version{0.1-draft}
+
+\usepackage{amsmath,amssymb,bm}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\addbibresource[location=local]{rkpm-reference.bib}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\dx}{\,\mathrm{d}\bm{x}}
+\newcommand{\ds}{\,\mathrm{d}s}
+\newcommand{\epspu}{\varepsilon_{\mathrm{pu}}}
+\newcommand{\epslin}{\varepsilon_{\mathrm{lin}}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+本文研究在不进行局部矩量矩阵逐点求逆的条件下，如何构造稳定、可解释的无网格 Deep Ritz 离散空间。为此，我们提出 Deep-RKPM-KAN：以共享 KAN 母核生成局部形函数，并在 Phase A 中采用 ``归一化线性重构 + 未归一化 PU 正则'' 的解耦训练方式来约束几何一致性。1D 机制实验表明，去除正性先验会导致明显的误差放大（v4: global $L_\infty=1.929\times10^1,\ \Lambda_h=67.139$）；加入 Teacher 诊断后，模型可恢复到稳定区间（v5: global $L_\infty=2.518\times10^{-1},\ \Lambda_h\approx1$）。理论上，本文给出结构性质、Phase A 残差与一致性误差之间的联系，以及包含离散、积分、边界与优化项的 Cea 型误差分解。当前稿件完成 1D 机制闭环，2D Poisson 的收敛率与误差项分离作为下一阶段验证。
+\keywords{无网格法，KAN，Deep Ritz，蒸馏学习，消融实验}
+\end{abstract}
+
+\section{引言}
+现有无网格 PDE 方法往往难以同时兼顾“结构可解释性”和“端到端可优化性”：传统 RKPM/MLS 依赖局部矩量矩阵求逆，而黑箱神经算子虽然便于训练，却弱化了离散空间本身的结构约束。本文关注的问题是，能否在形函数层保留无网格结构，同时在求解层继续使用 Deep Ritz 变分优化。
+
+为此，我们提出 Deep-RKPM-KAN。该方法以共享 KAN 母核生成局部形函数，并在 Phase A 中采用解耦约束（归一化线性重构 + 未归一化 PU 正则），以避免 ``$\sum_I\Phi_I\equiv1$'' 带来的 PU 同义反复，同时保留紧支与分片统一性。这样一来，模型无需执行逐点矩量矩阵求逆，也能构建可微离散空间。
+
+本文的实验重点不是单纯报告精度，而是说明稳定性如何失去、又如何恢复。v1-v5 消融表明，去除正性先验后会出现显著的正负抵消与振荡（v4: global $L_\infty=1.929\times10^1,\ \Lambda_h=67.139$）；加入 Teacher 诊断后，模型可恢复稳定（v5: global $L_\infty=2.518\times10^{-1},\ \Lambda_h\approx1$）。这一对比支持“失稳主要来自优化景观病态，而非表示能力不足”的解释。
+
+理论部分对应地给出一条从“结构性质”到“一致性残差”、再到“总误差上界”的分析路径，并以 Cea 型分解显式拆分离散、积分、边界与优化误差。当前版本完成 1D 机制闭环，2D Poisson 收敛率与误差项分离将在后续补齐。
+\subsection{相关工作与贡献}
+\subsubsection{相关工作}
+为便于审稿人快速把握本文与既有工作的关系，我们将相关工作整理为“方法假设—计算路径—可解释性”的对比矩阵，如表~\ref{tab:related-work-matrix}。传统 RKPM/SCNI 路线强调再生一致性与稳定积分\cite{liu1995rkpm,chen2001scni}，但通常需要显式处理局部矩量矩阵；Deep Ritz 路线将 PDE 求解写成能量最小化\cite{e2018deepritz}，优化上更直接，但离散空间本身的结构先验较弱；KAN 路线提供可学习函数基表示\cite{liu2024kan}，不过并不是围绕 RKPM 一致性约束来设计的。
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \caption{相关工作对比矩阵（本文定位）}
+  \label{tab:related-work-matrix}
+  \begin{tabular}{L{2.4cm}L{2.9cm}L{1.8cm}L{2.0cm}L{4.1cm}}
+    \toprule
+    路线 & 代表工作 & 逐点矩量矩阵逆 & 显式无网格结构约束 & 主要优势与局限 \\
+    \midrule
+    RKPM/SCNI & RKPM\cite{liu1995rkpm}, SCNI\cite{chen2001scni} & 是 & 强 & 可解释、局部性强；但实现与计算路径依赖显式局部矩阵处理。 \\
+    Deep Ritz & Deep Ritz\cite{e2018deepritz} & 否 & 弱 & 变分优化稳定、实现简洁；但结构先验主要在损失层，离散空间解释性有限。 \\
+    KAN 表示学习 & KAN\cite{liu2024kan} & 否 & 中（函数基可学习） & 表示灵活、可解释性较好；但并非围绕 RKPM 一致性约束设计。 \\
+    Deep-RKPM-KAN\\（本文） & 本文方法 & 否 & 强 & 结合共享 KAN 母核与 Phase A 解耦约束，在免逐点求逆前提下保留 PU/紧支结构，并用于 Deep Ritz 变分求解。 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+本文与上述工作的区别在于：我们不把结构约束和变分优化割裂开来，而是将无网格结构约束、可学习母核和变分优化放进同一个可微框架。本文也不把重点放在大规模跑分上，而是先回答一个更基础的问题：模型为什么会稳定，又会在什么条件下失稳。
+
+\subsubsection{本文贡献}
+本文当前版本的贡献主要体现在三点：
+\begin{enumerate}[label=\arabic*.]
+  \item \textbf{方法贡献：}提出 Deep-RKPM-KAN，在共享 KAN 母核与 Phase A 解耦约束下学习形函数，在避免传统 RKPM 逐点矩量矩阵求逆的同时，保留紧支与 PU 结构。
+  \item \textbf{机制贡献：}完成 1D 消融实验并给出可量化证据。v4（No-Softplus）到 v5（Teacher 诊断）使 global $L_\infty$ 从 $1.929\times10^1$ 降至 $2.518\times10^{-1}$，$\Lambda_h$ 从 $67.139$ 回落到约 $1$，对应从明显抵消放大到稳定恢复的变化。
+  \item \textbf{理论贡献：}建立命题 A/B/C 与 Cea 型误差分解之间的对应关系，将可观测训练残差映射到一致性误差，并为后续 2D 收敛率与误差项分离实验预留可检验接口。
+\end{enumerate}
+\section{问题设置与方法}
+\subsection{变分问题与离散目标}
+考虑二阶椭圆型问题（本文 1D 机制脚本对应区间 $\Omega=[0,1]$，并取常系数 $k=1$）：
+\begin{equation}
+  -\nabla\cdot(k\nabla u)=f,\quad \bm{x}\in\Omega,\qquad
+  u=g,\quad \bm{x}\in\partial\Omega_D.
+\end{equation}
+Ritz 能量泛函写为
+\begin{equation}
+  \mathcal{E}(v)=\int_{\Omega}\left(\frac{1}{2}k|\nabla v|^2-fv\right)\dx
+  +\beta\int_{\partial\Omega_D}|v-g|^2\ds.
+\end{equation}
+本文目标是在不显式执行局部矩量矩阵逐点求逆的前提下，构造可解释的离散试探空间并进入变分优化。对 1D 机制验证而言，我们首先验证形函数层的几何一致性与稳定性，再将该离散空间用于后续物理求解阶段。
+
+\subsection{离散表示与节点参数化}
+采用节点展开表示
+\begin{equation}
+  u_{\theta,\bm{w}}(\bm{x})=\sum_{I=1}^{N}\Phi_I(\bm{x};\theta)w_I,
+\end{equation}
+其中 $\bm{w}$ 为节点系数，$\theta$ 为共享 KAN 参数。1D 脚本中节点为均匀点列 $\{x_I\}_{I=1}^N$，步长 $h=1/(N-1)$，支撑半径设为
+\begin{equation}
+  R=\kappa h,\qquad \kappa=\texttt{support\_factor}.
+\end{equation}
+在 \texttt{deepritz\_meshfree\_kan\_rkpm\_1d\_validation\_v5.py} 默认配置下，$N=11,\ \kappa=2.0$，即 $R=0.2$。该参数化与输出目录中的 \texttt{metrics.json} 字段（\texttt{n\_nodes}, \texttt{h}, \texttt{support\_radius}）一一对应。
+
+\subsection{形函数构造（与代码一致）}
+对每个采样点 $\bm{x}$，定义相对坐标 $\bm{\xi}_I=(\bm{x}-\bm{x}_I)/R$，先计算 KAN 核值，再乘紧支窗函数：
+\begin{equation}
+  \tilde{\phi}_I(\bm{x})=\sigma\!\big(g_\theta(\bm{\xi}_I)\big),\qquad
+  \phi_I^{\mathrm{raw}}(\bm{x})=\tilde{\phi}_I(\bm{x})\,W(\|\bm{x}-\bm{x}_I\|/R).
+\end{equation}
+其中 $W$ 为 $C^2$ 三次样条紧支窗函数（脚本 \texttt{cubic\_spline\_window\_torch}），$\sigma$ 在不同版本取值不同：v1-v3 使用 Softplus（显式非负先验），v4-v5 取恒等映射（去除正性先验）。
+
+归一化规则为
+\begin{equation}
+  \Phi_I(\bm{x})=
+  \begin{cases}
+    \dfrac{\phi_I^{\mathrm{raw}}(\bm{x})}{\sum_J\phi_J^{\mathrm{raw}}(\bm{x})+\varepsilon}, & \left|\sum_J\phi_J^{\mathrm{raw}}(\bm{x})\right|\ge\varepsilon_{\mathrm{cov}},\\[1.2ex]
+    \text{kNN-softmax fallback}, & \text{否则}.
+  \end{cases}
+\end{equation}
+在 fallback 分支中，脚本取最近 $k=3$ 个节点并使用
+\begin{equation}
+  \omega_j \propto \exp(-\alpha d_j),\qquad \alpha=20/R,
+\end{equation}
+再归一化写回对应节点位置。该策略对应 \texttt{compute\_shape\_functions} 中 \texttt{eps\_cov}, \texttt{knn\_k}, \texttt{alpha} 的实现，目的是在覆盖盲区避免分母退化导致的数值爆炸。
+
+\subsection{训练目标：通用框架与 1D 实现}
+\textbf{Phase A（几何预热）} 的通用形式写为
+\begin{equation}
+  \mathcal{L}_{\mathrm{A}}
+  =\lambda_{\mathrm{lin}}\mathcal{L}_{\mathrm{lin}}
+  +\lambda_{\mathrm{pu}}\mathcal{L}_{\mathrm{pu,raw}}
+  +\lambda_{\mathrm{bd}}\mathcal{L}_{\mathrm{bd}},
+\end{equation}
+其中
+\begin{equation}
+  \mathcal{L}_{\mathrm{lin}}=\mathbb{E}\left[\left\|\sum_I\Phi_I(\bm{x})\bm{x}_I-\bm{x}\right\|^2\right],\quad
+  \mathcal{L}_{\mathrm{pu,raw}}=\mathbb{E}\left[\left(\sum_I\phi_I^{\mathrm{raw}}(\bm{x})-1\right)^2\right].
+\end{equation}
+边界锚点项（v3-v5）对 1D 端点约束为 $\phi_0(0)=1,\ \phi_{N-1}(1)=1$ 且其余节点在对应端点趋近 0。需要注意：v1 将 PU 项写在归一化后 $\Phi$ 上，形成近同义正则；v2 起修正为 raw-PU 形式（对应 \texttt{v2.py} 注释中的 \texttt{non-tautological regularization}）。
+
+\textbf{Teacher 诊断版本（v5）} 使用
+\begin{equation}
+  \mathcal{L}_{\mathrm{A}}^{\mathrm{v5}}
+  =
+  \lambda_{\mathrm{teacher}}\mathcal{L}_{\mathrm{teacher}}
+  +\lambda_{\mathrm{bd}}\mathcal{L}_{\mathrm{bd}}
+  +\lambda_{\mathrm{reg}}\mathcal{L}_{\mathrm{reg}},
+\end{equation}
+其中
+\begin{equation}
+  \mathcal{L}_{\mathrm{teacher}}=\mathbb{E}\!\left[\|\Phi-\Phi^{\mathrm{RKPM}}\|^2\right],\qquad
+  \mathcal{L}_{\mathrm{reg}}=\mathbb{E}\!\left[(\phi^{\mathrm{raw}})^2\right].
+\end{equation}
+\texttt{v5.py} 中 \texttt{linear} 与 \texttt{pu} 被保留为诊断量而非主优化目标，正对应本文“Teacher 用于容量/景观解耦诊断”的叙事。
+
+\textbf{Phase B（物理求解）} 的统一形式仍为
+\begin{equation}
+  \mathcal{L}_{\mathrm{total}}
+  =\mathcal{L}_{\mathrm{energy}}
+  +\beta\mathcal{L}_{\mathrm{bc}}
+  +\gamma\mathcal{L}_{\mathrm{geo}}.
+\end{equation}
+当前 \texttt{meshfree\_kan\_rkpm\_1d\_validation} 目录主要实现 Phase A 机制验证；Phase B 的系统实验在后续 2D Poisson 设置中展开。
+
+\subsection{实现流程与可复现配置}
+1D 机制脚本的最小流程可总结为：
+\begin{enumerate}[label=\arabic*.]
+  \item 设定 \texttt{torch.float64}、随机种子与节点/支撑参数（默认 \texttt{seed=42, N=11, R=2h}）。
+  \item 每步采样内部点 $x\sim U(0,1)$，并拼接边界点 $\{0,1\}$ 形成训练批。
+  \item 前向计算 $\Phi$ 与（可选）$\phi^{\mathrm{raw}}$，组装对应版本损失并用 Adam 更新（默认 \texttt{lr=1e-3}）。
+  \item 记录 \texttt{loss/teacher/linear/pu/bd/reg} 历史曲线，用于机制诊断。
+  \item 在密集评估网格上输出 \texttt{global\_l2}, \texttt{global\_linf}, \texttt{pu\_raw\_sum\_rmse}, \texttt{linear\_reproduction\_rmse} 等指标，并写入 \texttt{metrics.json}。
+\end{enumerate}
+上述流程对应 \texttt{deepritz\_meshfree\_kan\_rkpm\_1d\_validation\_v1.py} 到 \texttt{v5.py} 的实现，确保本文方法描述可直接追溯到运行脚本与产物文件。
+
+\section{1D 机理验证}
+\subsection{实验 A：1D 形函数对齐与稳定化机理}
+本小节并非仅报告误差数值，而是验证以下机制命题：当仅施加一致性约束时，训练问题对应欠定可行集；去除正性先验后，优化可通过正负抵消满足约束而引发非物理振荡；Teacher 蒸馏可用于区分“表示能力不足”与“损失景观病态”。
+\begin{enumerate}[label=\arabic*.]
+  \item 在 $[0,1]$ 上均匀布点，构建 RKPM 解析形函数作为参考；
+  \item 比较 KAN 学习形函数与 RKPM 曲线；
+  \item 报告全局 $L_2$、全局 $L_\infty$ 与线性重构 RMSE。
+\end{enumerate}
+
+\subsubsection{机制图示（Figure 1）}
+\begin{figure}[htbp]
+  \centering
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/1d_mechanism/v3_panel_strict_ylim.png}\\
+    (a) v3: Softplus + PU + BD
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/1d_mechanism/v4_panel_strict_ylim.png}\\
+    (b) v4: No-Softplus + PU + BD
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{figures/1d_mechanism/v5_panel_strict_ylim.png}\\
+    (c) v5: No-Softplus + BD + Teacher
+  \end{minipage}
+  \caption{1D 机制验证三联图。子图 (a) 的 v3（Softplus+PU+BD）保持非负，整体较稳定，但边界处仍可见一致性代价；子图 (b) 的 v4（去除 Softplus）在一致性约束下出现明显的正负抵消与大幅振荡（约 $\pm20$）；子图 (c) 的 v5（Teacher 诊断）将曲线重新拉回到解析 RKPM 参考附近，说明 v4 的失稳主要来自优化病态而非容量瓶颈。为避免视觉压缩，(a) 与 (c) 使用同一窄纵轴（如 $[-0.1,1.1]$），(b) 使用独立宽纵轴（如 $[-25,25]$）。定量结果见表~\ref{tab:ablation-v1-v5}。所有子图采用相同配置：$N=11,\ R=2.0h,\ \mathrm{seed}=42,\ \mathrm{float64}$。}
+  \label{fig:mechanism-v3-v4-v5}
+\end{figure}
+
+\subsubsection{消融结果表（v1-v5）}
+表~\ref{tab:ablation-v1-v5} 给出 1D 形函数对齐实验的核心消融结果。为保证可比性，表中指标均来自各版本对应输出目录中的 \texttt{metrics.json}。
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \caption{1D 消融对比（误差类指标越小越好）}
+  \label{tab:ablation-v1-v5}
+  \begin{tabular}{lccccc}
+    \toprule
+    版本 & Softplus & Loss 组成（PU/BD/Teacher） & 全局 $L_2$ & 全局 $L_\infty$ & 线性重构 RMSE \\
+    \midrule
+    v1（PU 伪约束）      & 是 & 伪PU / 无 / 无      & $2.256\times10^{-2}$ & $1.405\times10^{-1}$ & $2.562\times10^{-3}$ \\
+    v2（raw-PU 修复）    & 是 & PU / 无 / 无        & $3.407\times10^{-2}$ & $1.345\times10^{-1}$ & $1.909\times10^{-3}$ \\
+    v3（加入边界锚点）   & 是 & PU / BD / 无        & $9.000\times10^{-2}$ & $3.143\times10^{-1}$ & $1.466\times10^{-2}$ \\
+    v4（去 Softplus）    & 否 & PU / BD / 无        & $3.435\times10^{0}$  & $1.929\times10^{1}$  & $4.257\times10^{-2}$ \\
+    v5（Teacher 蒸馏）   & 否 & 无 / BD / Teacher   & $4.909\times10^{-2}$ & $2.518\times10^{-1}$ & $7.505\times10^{-3}$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+从该表可以得到两点直接结论：
+\begin{enumerate}[label=\arabic*.]
+  \item 在无 Teacher 引导时，去除 Softplus（v4）会引发显著震荡与抵消，误差急剧放大。
+  \item 引入 Teacher 蒸馏后（v5），可将无 Softplus 模型重新拉回稳定区间，显著优于 v4。该现象支持“v4 失稳主要来自优化病态而非容量瓶颈”的解释。
+\end{enumerate}
+
+\subsubsection{抵消指标统计（Kappa 指标）}
+为与第\ref{subsec:lebesgue}节理论分析对应，我们统计
+\begin{equation}
+  \kappa_\Phi(\bm{x})=\frac{\sum_{I=1}^{N}|\Phi_I(\bm{x})|}{\left|\sum_{J=1}^{N}\Phi_J(\bm{x})\right|},
+  \quad
+  \Lambda_h=\sup_{\bm{x}\in\Omega}\kappa_\Phi(\bm{x}).
+\end{equation}
+表~\ref{tab:kappa-v3-v5} 基于各版本 \texttt{curves.npz} 的离散评估点统计得到。结果显示：v4 的 $\Lambda_h$ 显著放大，而 v3/v5 维持在 1 附近。
+\begin{table}[htbp]
+  \centering
+  \small
+  \caption{$\kappa_\Phi$ 与 $\Lambda_h$ 统计（1D 机制验证）}
+  \label{tab:kappa-v3-v5}
+  \begin{tabular}{lcc}
+    \toprule
+    版本 & $\max_{\bm{x}}\kappa_\Phi(\bm{x})\,(=\Lambda_h)$ & $\mathrm{mean}_{\bm{x}}\,\kappa_\Phi(\bm{x})$ \\
+    \midrule
+    v3（Softplus + PU + BD） & $1.000$ & $1.000$ \\
+    v4（No-Softplus + PU + BD） & $67.139$ & $13.000$ \\
+    v5（No-Softplus + BD + Teacher） & $1.000$ & $1.000$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{2D 扩展实验计划（进行中）}
+\begin{enumerate}[label=\arabic*.]
+  \item 与标准 RKPM 做同节点、同半径、同积分策略对比；
+  \item 在节点加密过程中评估 $L_2/H^1$ 收敛率；
+  \item 分析几何约束项与边界项权重对误差的影响。
+\end{enumerate}
+
+同时，固定网络容量并分别扫描积分精度、优化步数与边界权重，估计
+$\delta_{\mathrm{quad}},\delta_{\mathrm{bc}},\delta_{\mathrm{opt}}$
+对总误差的贡献。该部分将在后续 2D Poisson 实验完成后统一报告。
+\section{理论分析}
+本节并不尝试证明 KAN 形函数与经典 RKPM 形函数逐点等价，而是给出一个可检验的“受约束逼近”框架：在紧支、分片统一性和几何一致性残差可控的前提下，说明 Deep-RKPM-KAN 所诱导的离散空间可以稳定地承载 Deep Ritz 变分求解。这样的表述也与第3节的机制验证相对应，即把 v1-v5 的实验现象整理成可进入误差分析的结构条件。
+
+具体地，本文按“结构性质 $\rightarrow$ 一致性误差 $\rightarrow$ 总误差上界”的顺序展开。命题 A 先给出形函数层面的非负性、紧支性与 PU 约束；命题 B 进一步把 Phase A 中可观测的训练残差映射为仿射重构误差；最后据此给出 Cea 型误差分解，将离散逼近误差与积分误差、边界处理误差、优化误差分开表示。分解中的 $\delta_{\mathrm{quad}}$、$\delta_{\mathrm{bc}}$、$\delta_{\mathrm{opt}}$ 也与第3节的扩展实验计划一一对应，便于后续将实验现象落到具体误差项上。
+\subsection{基本假设}
+\begin{enumerate}[label=(H\arabic*)]
+  \item 节点 quasi-uniform，支撑半径满足 $R=\kappa h,\ \kappa>1$；
+  \item 窗函数非负、紧支且足够光滑；
+  \item 归一化分母有界：$0<c_0\le\sum_J\phi_J\le C_0$；
+  \item 局部抵消指标有界：$\Lambda_h=\sup_{\bm{x}\in\Omega}\sum_I|\Phi_I(\bm{x})|<\infty$；
+  \item 训练、积分与优化误差可控。
+\end{enumerate}
+假设 (H1)-(H3) 对应无网格离散空间的几何可用性，保证归一化和局部重构在数值上有定义；(H4) 是稳定性的关键，因为它直接控制正负抵消带来的放大风险。本文在 1D 机制实验中并不把这些假设仅当作形式条件，而是尽量给出可观测的代理量，例如用 $\Lambda_h$ 的统计结果判断 (H4) 是否被破坏。对应地，v4 的 $\Lambda_h=67.139$ 表明稳定性显著恶化，而 v3/v5 的 $\Lambda_h\approx1$ 与稳定的形函数行为一致。最后，(H5) 将训练、积分和优化误差显式保留在上界中，避免把工程误差简单吸收到常数里而失去可检验性。这样处理后，后续 2D 扫参实验就可以直接对应到误差分解中的各项，而不只是停留在经验结论上。
+
+\subsection{命题 A：结构性质}
+在上述假设下，$\Phi_I$ 满足非负性、紧支性和分片统一性（PU）。命题 A 的作用是给出“可解释离散空间”的基本结构保证：非负性限制非物理振荡的自由度，紧支性保证局部性与稀疏计算结构，PU 则保证常数场可再生。需要说明的是，结构性质成立并不自动意味着训练稳定；它首先界定的是可行函数类，而训练稳定性还取决于这些约束如何进入损失景观，这也是命题 B/C 要继续回答的问题。与实验现象对应，v3 通过 Softplus 显式强化非负性，表现为结构稳定但一致性代价可观测；v4 去除这一先验后，虽然仍可满足部分几何约束，却出现明显的抵消放大。因此，命题 A 主要回答的是“空间是否合理”，而不是“优化是否容易”。
+
+\subsection{命题 B：Phase A 残差与一致性误差}
+命题 B 的作用是把可观测的训练量转化为可分析的一致性误差量。为此，先定义 PU 残差与线性重构残差
+\begin{equation}
+  \epspu=\left\|\sum_I\Phi_I-1\right\|_{L^2(\Omega)},\quad
+  \epslin=\left\|\sum_I\Phi_I\bm{x}_I-\bm{x}\right\|_{L^2(\Omega)}.
+\end{equation}
+当 $\mathcal{L}_{\mathrm{geo}}\to 0$ 时，$\epspu,\epslin\to 0$。进一步地，对任意仿射函数 $p(\bm{x})=a+\bm{b}^\top\bm{x}$，其离散重构误差满足
+\begin{equation}
+  \left\|p-\sum_I\Phi_I p(\bm{x}_I)\right\|_{L^2(\Omega)}
+  \le C\left(|a|\,\epspu+\|\bm{b}\|\,\epslin\right).
+\end{equation}
+该不等式表明，Phase A 残差的下降并不只是优化过程中的伴随现象，而是对后续变分离散误差的前置控制。换言之，如果 $\epspu,\epslin$ 不能下降到稳定区间，那么即便继续优化物理能量项，误差也会先在表示层面遇到下界。这也解释了本文为何将 Phase A 单独拿出来，而不是把全部损失一次性混合训练。与第3节表~\ref{tab:ablation-v1-v5} 对照，v2 相比 v1 在线性重构 RMSE 上的改善，说明 raw-PU 修复确实改善了一致性；而 v3/v4/v5 的差异则进一步说明，一致性约束之外仍需要稳定性控制。因此，命题 B 的作用是把训练日志中的可观测量转写成误差分析中的证据，为主定理里的逼近项提供可测入口。
+
+\subsection{命题 C：无正性先验下的误差放大机制}
+\label{subsec:lebesgue}
+定义离散算子 $I_h v(\bm{x})=\sum_{I=1}^N\Phi_I(\bm{x})v(\bm{x}_I)$。在 $I_h$ 为节点插值投影且假设 (H4) 成立时，存在如下稳定性估计：
+\begin{equation}
+  \|I_h v\|_{L^\infty(\Omega)} \le \Lambda_h \|v\|_{L^\infty(\Omega)}.
+\end{equation}
+若进一步满足标准插值再生条件，则可得到 Lebesgue 引理型误差界
+\begin{equation}
+  \|u-I_hu\|_{L^\infty(\Omega)}
+  \le (1+\Lambda_h)\inf_{v_h\in V_\theta}\|u-v_h\|_{L^\infty(\Omega)}.
+\end{equation}
+这说明 $\Lambda_h$ 直接控制误差的放大系数。对于 Softplus 约束下的非负形函数，若 PU 条件严格成立，则 $\Lambda_h\approx1$；去除正性先验后，$\Lambda_h$ 则可能显著增大，从而放大训练残差与数值扰动。第\ref{tab:kappa-v3-v5}表中的 v4 结果与这一机制一致：当 $\Lambda_h$ 增大到 $67.139$ 时，global $L_\infty$ 也同步恶化到 $1.929\times10^1$。进一步地，v5 在无 Softplus 条件下借助 Teacher 诊断将 $\Lambda_h$ 拉回到约 1，也对应误差的恢复。这个现象支持本文的基本判断：关键问题不在于模型是否具备拟合能力，而在于是否抑制了抵消放大通道。因此，命题 C 为实验中的异常值提供了相对清楚的理论解释。
+
+\subsection{主定理：Cea 型误差分解}
+设离散空间 $V_\theta=\{\sum_I\Phi_I(\cdot;\theta)w_I\}$。在双线性型连续且满足强制性的标准条件下，存在常数 $C>0$（其可依赖于问题系数、惩罚参数与稳定性常数 $\Lambda_h$），使得
+\begin{equation}
+  \|u-u_{\theta,\hat{\bm{w}}}\|_{H^1(\Omega)}
+  \le C\Big(\inf_{v\in V_\theta}\|u-v\|_{H^1(\Omega)}
+  +\delta_{\mathrm{quad}}+\delta_{\mathrm{bc}}+\delta_{\mathrm{opt}}\Big).
+\end{equation}
+其中，第一项是离散空间的最佳逼近误差；后三项分别对应积分离散、边界处理和有限步优化带来的附加误差。这个分解的意义在于，它不仅给出形式上的上界，也对应一条可执行的实验设计路径。具体来说，节点加密实验主要对应逼近项，积分阶数扫描主要对应 $\delta_{\mathrm{quad}}$，边界惩罚权重扫描对应 $\delta_{\mathrm{bc}}$，不同优化器与训练步数的比较对应 $\delta_{\mathrm{opt}}$。这样，误差项的变化就可以通过第3节“2D 扩展实验计划（进行中）”逐项诊断，而不必混在单一总误差里。该分解也说明了本文当前版本的定位：先完成 1D 机制闭环，再在 2D 中补足各误差项的可分离实证。
+
+\section{结论与后续工作}
+本文给出了 Deep-RKPM-KAN 的第一版理论与实验结果，并通过 v1-v5 消融说明训练目标设计会直接影响形函数稳定性。当前工作主要完成了 1D 机制验证以及与之对应的理论解释。
+后续工作将继续补充更强的无监督平滑正则、不同节点密度下的误差阶验证，以及与更多基线方法的系统比较，并在 2D Poisson 设置中进一步检验误差分解中的各项贡献。
+
+\printbibliography[heading=bibintoc, title=\ebibname]
+
+\end{document}
+
