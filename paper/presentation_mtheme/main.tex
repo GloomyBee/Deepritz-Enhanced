@@ -16,7 +16,7 @@
 
 \title{Deep-RKPM-KAN}
 \subtitle{从 1D 机制验证到 2D Poisson 收敛}
-\author{Deepritz Enhanced 项目组}
+\author{陈一锋}
 \institute{Deepritz Enhanced}
 \date{2026-03-08}
 
@@ -68,18 +68,26 @@
 
 \begin{frame}{方法总图：从节点到 Deep Ritz}
 \begin{center}
-\renewcommand{\arraystretch}{1.4}
+\renewcommand{\arraystretch}{1.35}
 \begin{tabular}{>{\RaggedRight\arraybackslash}p{0.16\linewidth}>{\centering\arraybackslash}p{0.05\linewidth}>{\RaggedRight\arraybackslash}p{0.16\linewidth}>{\centering\arraybackslash}p{0.05\linewidth}>{\RaggedRight\arraybackslash}p{0.16\linewidth}>{\centering\arraybackslash}p{0.05\linewidth}>{\RaggedRight\arraybackslash}p{0.22\linewidth}}
 节点集 & $\rightarrow$ & 局部 KAN 母核 & $\rightarrow$ & 窗函数与归一化 & $\rightarrow$ & 形函数 $\Phi_I(x)$ 与 Deep Ritz \\
 \end{tabular}
 \end{center}
-\vspace{1em}
+\vspace{0.55em}
+{\footnotesize
+\begin{align*}
+\tilde\phi_I(x) &= \psi_\theta\!\left(\frac{x-x_I}{\kappa h}\right) W\!\left(\|x-x_I\|,\kappa h\right),\\
+\phi_I(x) &= \frac{\tilde\phi_I(x)}{\sum_J \tilde\phi_J(x)},
+\qquad
+u_h(x)=\sum_I \phi_I(x) w_I.
+\end{align*}
+}
 \begin{itemize}
-  \item Phase A：先学习 shape function 的几何一致性
-  \item Phase B：在固定或联合优化下进入 Poisson 能量最小化
+  \item Phase A：先学习 shape function 的几何一致性与边界锚定
+  \item Phase B：在保持离散空间稳定的前提下最小化 Deep Ritz 能量
   \item fallback、teacher、regularization 是关键稳定化机制
 \end{itemize}
-\smallnote{方法细节可对照公共模块与论文主文档。}
+\smallnote{$\kappa h$ 控制支撑半径，$W$ 为紧支撑窗函数，$w_I$ 为节点系数。}
 \end{frame}
 
 \section{1D 机制验证}
@@ -176,11 +184,17 @@
 \column{0.32\textwidth}
 \imgw{1.0}{../../output/meshfree_kan_rkpm_2d_validation/patch_test/variant_softplus_raw_pu_bd_ns15_k2p5_seed42_paper_v1/figures/lambda_h_heatmap.png}
 \end{columns}
-\vspace{0.4em}
+\vspace{0.15em}
+{\scriptsize
+\begin{align*}
+\text{PU residual} &: \sum_I \phi_I(x,y)-1,\qquad
+\text{linear reproduction}: \sum_I \phi_I(x,y)x_I-x,\\
+\Lambda_h(x,y) &: \sum_I |\phi_I(x,y)|.
+\end{align*}
+}
 \begin{itemize}
-  \item patch test 检验的是：$\sum_I \phi_I \approx 1$ 与一次重构是否成立
-  \item 这一步不是主 PDE 结果，而是 shape function 合法性验证
-  \item \texttt{PU residual}、\texttt{linear reproduction} 与 $\Lambda_h$ 一起报告更完整
+  \item 前两图检验 PU / 一次重构，第三图检验是否存在放大效应
+  \item $\Lambda_h\approx 1$ 常对应稳定形函数；若显著偏大，通常说明有振荡或抵消
 \end{itemize}
 \end{frame}
 
@@ -207,19 +221,33 @@
 
 \begin{frame}{2D Poisson 主实验设定}
 \begin{columns}[T,onlytextwidth]
-\column{0.54\textwidth}
+\column{0.56\textwidth}
+{\footnotesize
+\begin{align*}
+u^*(x,y) &= \sin(\pi x)\sin(\pi y),\\
+-\Delta u &= f = 2\pi^2 \sin(\pi x)\sin(\pi y),\\
+\mathcal{L}_{\mathrm{PDE}} &= \mathcal{E}(u_h)+\beta_{bc}\,\mathcal{L}_{bc}+\gamma_{lin}\,\mathcal{L}_{lin}.
+\end{align*}
+}
 \begin{itemize}
-  \item 问题：\texttt{sinusoidal\_poisson\_2d}
   \item 网格规模：\texttt{n\_side = 11, 15, 21}
   \item 当前主变体：\texttt{no\_softplus\_teacher\_reg}
-  \item 关键参数：\texttt{kappa=2.5}, \texttt{beta\_bc=500}, \texttt{gamma\_linear=1}
+  \item \texttt{kappa=2.5}：支撑半径比，$r_{supp}=\kappa h$
+  \item \texttt{beta\_bc=500}：边界罚项权重
+  \item \texttt{gamma\_linear=1}：一次重构保持项权重
 \end{itemize}
-\column{0.42\textwidth}
-\begin{block}{目标}
-让 2D \texttt{L2/H1} 收敛曲线更接近论文投稿所需的展示质量，同时保持 \texttt{PU} 与 $\Lambda_h$ 的稳定。
+\column{0.38\textwidth}
+\begin{block}{两阶段训练}
+\begin{itemize}
+  \item Phase A：先把 $\phi_I$ 训练到 PU / 边界 / teacher 一致性较好
+  \item Phase B：在解 PDE 的同时继续抑制离散空间漂移
+\end{itemize}
 \end{block}
+\begin{exampleblock}{目标}
+让 2D \texttt{L2/H1} 结果进入更适合投稿展示的误差区间，同时保持 \texttt{PU} 与 $\Lambda_h$ 稳定。
+\end{exampleblock}
 \end{columns}
-\smallnote{当前最佳结果对应 \texttt{paper\_v3\_main} 系列输出目录。}
+\smallnote{当前最佳结果对应 \texttt{paper\_v3\_main}；这里更强调参数含义与损失组成，而不只报最终误差。}
 \end{frame}
 
 \begin{frame}{2D 主结果：多尺度误差对比}

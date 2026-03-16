@@ -32,6 +32,15 @@ import visualizers
 
 torch.set_default_dtype(torch.float64)
 
+"""
+sph cubic spline
+W(q) =
+    \begin{cases}
+        \frac{2}{3} - 4q^2 + 4q^3 &                 0 \le q \le \frac12 \\
+        \frac{4}{3} - 4q + 4q^2 - \frac{4}{3}q^3 &  \frac12 < q \le 1 \\
+        0 &                                         q>1
+\end{cases}
+"""
 
 def cubic_spline_window_torch(dist: torch.Tensor, radius: float) -> torch.Tensor:
     """C2 cubic spline window with compact support."""
