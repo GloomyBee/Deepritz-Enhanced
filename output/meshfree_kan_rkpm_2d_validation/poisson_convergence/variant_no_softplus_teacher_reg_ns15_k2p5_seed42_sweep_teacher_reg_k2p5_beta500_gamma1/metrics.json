@@ -1,0 +1,21 @@
+{
+  "problem_name": "sinusoidal_poisson_2d",
+  "variant": "no_softplus_teacher_reg",
+  "n_side": 15,
+  "n_nodes": 225,
+  "h": 0.07142857142857142,
+  "kappa": 2.5,
+  "support_radius": 0.17857142857142855,
+  "seed": 42,
+  "phase_a_steps": 1500,
+  "phase_b_steps": 2200,
+  "lambda_h_max": 1.0000000000010183,
+  "lambda_h_mean": 1.0000000000006914,
+  "pu_rmse": 6.929032170303207e-13,
+  "pu_linf": 1.0182965581861936e-12,
+  "linear_x_rmse": 0.00374311516833888,
+  "linear_y_rmse": 0.0035741395002799065,
+  "l2_error": 0.007823663048510773,
+  "h1_semi_error": 0.284544377160881,
+  "boundary_l2": 0.009448972699020607
+}

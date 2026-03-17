@@ -21,11 +21,14 @@ ENV/
 *.png
 *.jpg
 *.pdf
-output*/
 
 # Data
 *.npz
 *.npy
+
+# Keep experiment artifacts under output tracked
+!output/
+!output/**
 
 # Temp
 .ccb_config/

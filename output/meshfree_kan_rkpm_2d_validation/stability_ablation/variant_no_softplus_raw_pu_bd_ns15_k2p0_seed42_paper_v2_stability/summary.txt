@@ -1,0 +1,15 @@
+problem_name: stability_ablation_2d
+variant: no_softplus_raw_pu_bd
+n_side: 15
+n_nodes: 225
+h: 0.07142857142857142
+kappa: 2.0
+support_radius: 0.14285714285714285
+seed: 42
+phase_a_steps: 1500
+lambda_h_max: 14.091079235897029
+lambda_h_mean: 2.151464281218913
+pu_rmse: 9.012323899251696e-12
+pu_linf: 4.405853459843456e-11
+linear_x_rmse: 0.03748512084252628
+linear_y_rmse: 0.024630647767318135

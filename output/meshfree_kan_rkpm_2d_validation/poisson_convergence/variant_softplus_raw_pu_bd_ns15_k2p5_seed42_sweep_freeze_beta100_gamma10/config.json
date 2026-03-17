@@ -1,0 +1,21 @@
+{
+  "n_sides": "15",
+  "kappas": "2.5",
+  "variant": "softplus_raw_pu_bd",
+  "phase_a_steps": 1200,
+  "phase_b_steps": 1600,
+  "batch_size": 1024,
+  "lr_phase_a": 0.001,
+  "lr_kan_b": 0.0,
+  "lr_w": 0.01,
+  "beta_bc": 100.0,
+  "gamma_linear": 10.0,
+  "warmup_w_steps": 1200,
+  "eval_interval": 100,
+  "eval_resolution": 41,
+  "hidden_dim": 16,
+  "grid_resolution": 81,
+  "seed": 42,
+  "log_interval": 200,
+  "output_tag": "sweep_freeze_beta100_gamma10"
+}

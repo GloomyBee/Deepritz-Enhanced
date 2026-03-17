@@ -1,0 +1,13 @@
+{
+  "n_side": 7,
+  "kappa": 2.5,
+  "variant": "softplus_raw_pu_bd",
+  "phase_a_steps": 1,
+  "batch_size": 32,
+  "lr": 0.001,
+  "hidden_dim": 16,
+  "grid_resolution": 11,
+  "seed": 42,
+  "log_interval": 1,
+  "output_tag": "pkg_smoke"
+}

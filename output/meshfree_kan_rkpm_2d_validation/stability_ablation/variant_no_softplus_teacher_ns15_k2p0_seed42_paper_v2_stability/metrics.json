@@ -1,0 +1,17 @@
+{
+  "problem_name": "stability_ablation_2d",
+  "variant": "no_softplus_teacher",
+  "n_side": 15,
+  "n_nodes": 225,
+  "h": 0.07142857142857142,
+  "kappa": 2.0,
+  "support_radius": 0.14285714285714285,
+  "seed": 42,
+  "phase_a_steps": 1500,
+  "lambda_h_max": 1.0021291021023138,
+  "lambda_h_mean": 1.0000754381103996,
+  "pu_rmse": 3.414161260281243e-12,
+  "pu_linf": 6.112554906678724e-12,
+  "linear_x_rmse": 0.004790357829314812,
+  "linear_y_rmse": 0.00712406604363028
+}

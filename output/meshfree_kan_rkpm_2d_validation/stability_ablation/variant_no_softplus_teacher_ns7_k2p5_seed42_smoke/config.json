@@ -1,0 +1,13 @@
+{
+  "variants": "softplus_raw_pu_bd,no_softplus_teacher",
+  "n_side": 7,
+  "kappa": 2.5,
+  "phase_a_steps": 2,
+  "batch_size": 64,
+  "lr": 0.001,
+  "hidden_dim": 16,
+  "grid_resolution": 15,
+  "seed": 42,
+  "log_interval": 1,
+  "output_tag": "smoke"
+}
