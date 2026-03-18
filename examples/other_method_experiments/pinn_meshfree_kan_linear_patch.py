@@ -1,14 +1,18 @@
 """
-Example: Deep Meshfree KAN for Linear Patch Test
+Example: PINN Meshfree KAN for Linear Patch Test
 Equation: -Δu = 0 in [0,1]x[0,1]
 Exact: u = x + y
+Method: Physics-Informed Neural Networks (strong form)
 Target: Machine precision with PU + linear completeness
 """
 
 import sys
-sys.path.append('..')
-
 import os
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -16,6 +20,7 @@ from pathlib import Path
 
 # Import existing components
 from problems import LinearPatchProblem
+from trainers import PINNTrainer  # For _laplacian static method
 from visualizers import plot_square_triplet, plot_training_history, get_example_output_subdir
 import visualizers
 
@@ -238,7 +243,7 @@ class MeshfreeKANNet(nn.Module):
 # ============================================================================
 # 4. Training Function with Two-Phase Strategy
 # ============================================================================
-def train_meshfree_kan(
+def train_meshfree_kan_pinn(
     model,
     problem,
     device,
@@ -251,16 +256,16 @@ def train_meshfree_kan(
     log_interval=100
 ):
     """
-    Two-phase training for Meshfree KAN.
+    Two-phase training for Meshfree KAN using PINN method.
 
     Phase A (Geometry Warmup): Train KAN only, enforce PU
-    Phase B (Physics Solve): Train both KAN and w, minimize energy
+    Phase B (Physics Solve): Train both KAN and w, minimize PDE residual
     """
     history = {
         'steps': [],
         'loss': [],
         'pu_loss': [],
-        'energy': [],
+        'pde': [],
         'boundary': [],
         'l2_error': [],
         'h1_error': []
@@ -327,18 +332,14 @@ def train_meshfree_kan(
         x_boundary = x_boundary.to(device)
 
         u_domain = model(x_domain)
-        grad_u = torch.autograd.grad(
-            outputs=u_domain,
-            inputs=x_domain,
-            grad_outputs=torch.ones_like(u_domain),
-            create_graph=True,
-            retain_graph=True
-        )[0]
 
-        k = problem.k
+        # Compute Laplacian for PDE residual
+        laplacian = PINNTrainer._laplacian(u_domain, x_domain)
         f = problem.source_term(x_domain)
-        energy_density = 0.5 * k * torch.sum(grad_u ** 2, dim=1, keepdim=True) - f * u_domain
-        loss_energy = torch.mean(energy_density) * problem.area_domain
+
+        # PDE residual: -Δu = f  =>  residual = Δu + f
+        pde_residual = laplacian + f
+        loss_pde = torch.mean(pde_residual ** 2) * problem.area_domain
 
         u_boundary = model(x_boundary)
         u_exact_boundary = problem.exact_solution(x_boundary)
@@ -362,7 +363,7 @@ def train_meshfree_kan(
         loss_linear = torch.mean((reproduced_x - target_x) ** 2 + (reproduced_y - target_y) ** 2)
         gamma_linear = 10.0  # Weight for linear reproduction constraint
 
-        loss = loss_energy + loss_bc + gamma_linear * loss_linear
+        loss = loss_pde + loss_bc + gamma_linear * loss_linear
 
         optimizer_all.zero_grad()
         loss.backward()
@@ -397,13 +398,13 @@ def train_meshfree_kan(
             # === 3. 记录日志 ===
             history['steps'].append(phase_a_steps + step)
             history['loss'].append(loss.item())
-            history['energy'].append(loss_energy.item())
+            history['pde'].append(loss_pde.item())
             history['boundary'].append(loss_bc.item())
             history['l2_error'].append(l2_error)
             history['h1_error'].append(h1_error)
 
             print(f"Step {step:4d} | Loss={loss.item():.5e} | "
-                  f"Energy={loss_energy.item():.5e} | BC={loss_bc.item():.5e} | "
+                  f"PDE={loss_pde.item():.5e} | BC={loss_bc.item():.5e} | "
                   f"L2={l2_error:.2e} | H1={h1_error:.2e}")
 
     print(f"\nPhase B completed.")
@@ -420,8 +421,8 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}\n")
 
-    ROOT = Path(__file__).resolve().parents[1]
-    visualizers.OUTPUT_DIR = str(ROOT / "output")
+    ROOT = Path(__file__).resolve().parents[2]
+    visualizers.OUTPUT_DIR = str(ROOT / "output" / "other_method_experiments")
     output_subdir = get_example_output_subdir(__file__)
     print(f"Output directory: {visualizers.OUTPUT_DIR}/{output_subdir}/\n")
 
@@ -455,7 +456,7 @@ def main():
     print(f"  - Nodal coefficients: {model.w.numel()}\n")
 
     print("Starting training...\n")
-    history = train_meshfree_kan(
+    history = train_meshfree_kan_pinn(
         model=model,
         problem=problem,
         device=device,
@@ -483,7 +484,7 @@ def main():
 
     plot_square_triplet(
         X, Y, u_pred, u_exact,
-        title_prefix="Meshfree KAN (Linear Patch)",
+        title_prefix="PINN Meshfree KAN (Linear Patch)",
         filename="solution_triplet.png",
         val_clim=(0.0, 2.0),
         err_vmax=0.01,

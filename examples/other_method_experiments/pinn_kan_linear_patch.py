@@ -1,27 +1,30 @@
 """
-Example 4: Gaussian peak (high gradient) on a square domain.
-Equation: -Δu = f in [0,1]x[0,1]
-Exact: u = exp(-r^2/alpha^2), r^2 = (x-0.5)^2 + (y-0.5)^2
+Example: KAN PINN patch test (u = x + y) on [0,1]^2.
+Strong form PINN with KANSplineNet.
 """
 
 import sys
-sys.path.append('..')
-
 import os
-import torch
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
+
 import numpy as np
+import torch
 from pathlib import Path
-from problems import GaussianPeak2D
-from networks import RitzNet
-from integrators import GaussIntegrator
-from trainers import DeepRitzTrainer
-from visualizers import plot_training_history, plot_square_triplet, get_example_output_subdir
+
+from problems import LinearPatchProblem
+from samplers import SquareSampler
+from networks import KANSplineNet
+from trainers import PINNTrainer
+from visualizers import plot_square_triplet, plot_training_history, get_example_output_subdir
 import visualizers
 
+
 # ============================================================================
-# 0. 项目初始化（种子，设备，路径）
+# 0. Project initialization (seed, device, paths)
 # ============================================================================
-# Set random seed
 torch.manual_seed(42)
 np.random.seed(42)
 
@@ -29,81 +32,83 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Device: {device}")
 
 # Output directory management - use absolute path
-ROOT = Path(__file__).resolve().parents[1]
-visualizers.OUTPUT_DIR = str(ROOT / "output")
+ROOT = Path(__file__).resolve().parents[2]
+visualizers.OUTPUT_DIR = str(ROOT / "output" / "other_method_experiments")
 output_subdir = get_example_output_subdir(__file__)
 print(f"Output directory: {visualizers.OUTPUT_DIR}/{output_subdir}/")
 
 # ============================================================================
-# 1. 定义问题
+# 1. Problem definition
 # ============================================================================
-alpha = 0.1
-problem = GaussianPeak2D(alpha=alpha, xc=0.5, yc=0.5)
+problem = LinearPatchProblem()
 print(f"Problem: {problem.name}")
-print(f"Alpha: {alpha}")
-print("Center: (0.5, 0.5)")
+print("Domain: [0,1] x [0,1]")
+print("Exact: u = x + y")
+print("Target error: < 1e-8")
 
 # ============================================================================
-# 2) Model
+# 2. Sampler
 # ============================================================================
-model = RitzNet(
-    input_dim=2,
-    hidden_dims=[256, 256, 256, 256, 256, 256],
-    output_dim=1
-).to(device)
+sampler = SquareSampler(x_range=(0, 1), y_range=(0, 1))
+
+# ============================================================================
+# 3. Model
+# ============================================================================
+model = KANSplineNet(input_dim=2, hidden_dim=8, output_dim=1, num=5, k=3, grid_range=(-0.2, 1.2)).to(device)
 print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
 # ============================================================================
-# 3) Integrator
+# 4. Optimizer
 # ============================================================================
-integrator = GaussIntegrator(nx=24, ny=24, domain_bounds=(0, 1, 0, 1), order=4)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 
 # ============================================================================
-# 4) Optimizer
+# 5. Trainer
 # ============================================================================
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-# ============================================================================
-# 5. 训练
-# ============================================================================
-trainer = DeepRitzTrainer(
+trainer = PINNTrainer(
     model=model,
     problem=problem,
-    integrator=integrator,
+    sampler=sampler,
     optimizer=optimizer,
     device=device,
-    beta_bc=500.0
+    beta_bc=100.0
 )
 
 print("\nTraining...")
-print("Note: high gradient problem may take longer...")
-history = trainer.train(n_steps=15000, log_interval=500, eval_interval=500)
+history = trainer.train(
+    n_steps=2000,
+    batch_domain=1000,
+    batch_boundary=400,
+    log_interval=200,
+    eval_interval=200,
+    n_eval_points=2000
+)
 
 # ============================================================================
-# 6. 可视化
+# 6. Visualization
 # ============================================================================
 print("\nGenerating visualizations...")
 
-# 生成测试网格
-res = 100
+# Generate test grid
+res = 200
 x = np.linspace(0, 1, res)
 y = np.linspace(0, 1, res)
 X, Y = np.meshgrid(x, y)
-x_test = torch.tensor(np.column_stack([X.ravel(), Y.ravel()]), dtype=torch.float32, device=device)
+pts = torch.tensor(np.column_stack([X.ravel(), Y.ravel()]), dtype=torch.float32, device=device)
 
-# 预测和解析解
+# Prediction and exact solution
 model.eval()
 with torch.no_grad():
-    u_pred = model(x_test).cpu().numpy().reshape(res, res)
-u_exact = problem.exact_solution(x_test).cpu().numpy().reshape(res, res)
+    pred = model(pts).cpu().numpy().reshape(X.shape)
+    exact = problem.exact_solution(pts).cpu().numpy().reshape(X.shape)
 
-# 绘制三联图（高斯峰值域范围不同）
+# Plot triplet
 plot_square_triplet(
-    X, Y, u_pred, u_exact,
-    title_prefix="Deep Ritz (Gaussian Peak)",
+    X, Y, pred, exact,
+    title_prefix="KAN PINN (Patch Test)",
+    val_clim=(0.0, 2.0),
+    err_vmax=0.01,
     filename="solution_triplet.png",
-    val_clim=(0.0, 1.0),
-    err_vmax=0.1,  # 高梯度问题误差可能更大
     subdir=output_subdir
 )
 

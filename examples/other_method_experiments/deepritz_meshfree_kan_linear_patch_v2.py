@@ -1,19 +1,37 @@
 """
-Deep Meshfree KAN for Linear Patch Test (v4 - Robust + High Precision)
+Deep Meshfree KAN for Linear Patch Test (v2 - Expert Enhanced)
+
 Equation: -Δu = 0 in [0,1]x[0,1]
 Exact: u = x + y
-Target: very high precision with:
-  - Softplus non-negativity
+Method: Deep Ritz with meshfree KAN shape functions
+
+Key Features (Expert Improvements):
+  - Float64 precision for machine-level accuracy
+  - Softplus non-negativity constraint
   - Shepard normalization (PU)
+  - Coverage-safe kNN fallback for orphan points
   - Linear reproduction pretraining (Phase A)
-  - Coverage-safe fallback (kNN softmax) for orphan points
-  - Float64 throughout
+  - Exact solution initialization for w (Phase B)
+  - Mixed sampling strategy (uniform + local)
+  - Reflection-based domain constraint
 """
+
+import sys
+import os
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
 
 import torch
 import torch.nn as nn
 import numpy as np
-import matplotlib.pyplot as plt
+from pathlib import Path
+
+# Import existing components
+from problems import LinearPatchProblem
+from visualizers import plot_square_triplet, plot_training_history, get_example_output_subdir
+import visualizers
 
 # =============================================================================
 # 0. Global Precision Setup
@@ -22,15 +40,18 @@ torch.set_default_dtype(torch.float64)
 
 
 # =============================================================================
-# 1. Window Function (Compact Support)
+# 1. Window Function (Cubic Spline - C2 continuous)
 # =============================================================================
 def cubic_spline_window(dist: torch.Tensor, radius: float) -> torch.Tensor:
     """
     Cubic spline window with compact support.
+
     q = dist/radius
     W(q) = 2/3 - 4q^2 + 4q^3,            0 <= q <= 0.5
            4/3 - 4q + 4q^2 - 4/3 q^3,    0.5 < q <= 1
            0,                            q > 1
+
+    This is C2 continuous at q=0.5 and q=1.
     """
     q = dist / radius
     window = torch.zeros_like(q)
@@ -48,7 +69,7 @@ def cubic_spline_window(dist: torch.Tensor, radius: float) -> torch.Tensor:
 
 
 # =============================================================================
-# 2. KAN Spline Network (Hat / Linear B-spline basis)
+# 2. KAN Spline Network (Linear B-spline / Hat Functions)
 # =============================================================================
 class KANSplineNet(nn.Module):
     """
@@ -152,6 +173,7 @@ class MeshfreeKANNet(nn.Module):
         self,
         x: torch.Tensor,
         return_stats: bool = False,
+        return_raw: bool = False,
         eps_cov: float = 1e-14,
         knn_k: int = 8,
         knn_alpha: float | None = None,
@@ -163,6 +185,7 @@ class MeshfreeKANNet(nn.Module):
         - Fallback path: if sum(windowed) too small -> kNN distance softmax weights, ensures Σφ=1
 
         return_stats: if True returns (phi, stats_dict)
+        return_raw: if True returns phi_windowed before normalization (for Phase A linear repro)
         """
         M = x.shape[0]
         N = self.N
@@ -210,6 +233,17 @@ class MeshfreeKANNet(nn.Module):
             phi_orphan.scatter_(1, idx, w_knn)
             phi[orphan_mask] = phi_orphan
 
+        # Return raw windowed phi if requested (for Phase A linear repro training)
+        if return_raw:
+            if return_stats:
+                stats = {
+                    "phi_sum_min": phi_sum.min().item(),
+                    "phi_sum_p01": torch.quantile(phi_sum.squeeze(1), 0.01).item(),
+                    "orphan_ratio": orphan_mask.to(torch.float64).mean().item(),
+                }
+                return phi_windowed, stats
+            return phi_windowed
+
         if return_stats:
             stats = {
                 "phi_sum_min": phi_sum.min().item(),
@@ -235,27 +269,6 @@ class MeshfreeKANNet(nn.Module):
             return u, stats
         return u
 
-
-# =============================================================================
-# 4. Problem Definition
-# =============================================================================
-class LinearPatchProblem:
-    def __init__(self):
-        self.k = 1.0
-
-    def exact_solution(self, x: torch.Tensor) -> torch.Tensor:
-        return x[:, 0:1] + x[:, 1:2]
-
-    def exact_gradient(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.ones_like(x)
-
-    def source_term(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.zeros(x.shape[0], 1, device=x.device, dtype=x.dtype)
-
-
-# =============================================================================
-# 5. Training
-# =============================================================================
 def reflect_to_unit_box(x: torch.Tensor) -> torch.Tensor:
     """
     Reflect points into [0,1]^2 without boundary pile-up typical of clamp.
@@ -287,6 +300,10 @@ def sample_boundary(batch_size: int, device: str) -> torch.Tensor:
 
     return torch.cat([left, right, bottom, top], dim=0)
 
+
+# =============================================================================
+# 5. Training Function with Two-Phase Strategy
+# =============================================================================
 def train_meshfree_kan(
     model: MeshfreeKANNet,
     problem: LinearPatchProblem,
@@ -301,6 +318,28 @@ def train_meshfree_kan(
     gamma_linear_b: float = 10.0,
     log_interval: int = 100,
 ):
+    """
+    Two-phase training for Meshfree KAN (Expert Enhanced Version).
+
+    Phase A (Geometry Pretraining): Train KAN only, enforce linear reproduction
+    Phase B (Physics Solve): Train both KAN and w, minimize energy functional
+
+    Returns:
+        history: dict with training metrics
+    """
+    # Initialize history
+    history = {
+        'steps': [],
+        'loss': [],
+        'linear_repro': [],
+        'energy': [],
+        'boundary': [],
+        'l2_error': [],
+        'h1_error': [],
+        'phi_sum_min': [],
+        'orphan_ratio': []
+    }
+
     # Pre-fetch nodes for linear reproduction loss
     nodes_x = model.nodes[:, 0:1]
     nodes_y = model.nodes[:, 1:2]
@@ -327,7 +366,12 @@ def train_meshfree_kan(
 
         x_domain = torch.cat([x_uniform, x_local], dim=0)
 
-        phi, stats = model.compute_shape_functions(x_domain, return_stats=True)
+        # Use RAW phi (windowed but not normalized) for linear reproduction training
+        phi_raw, stats = model.compute_shape_functions(x_domain, return_stats=True, return_raw=True)
+
+        # Normalize for linear reproduction constraint
+        phi_sum = torch.sum(phi_raw, dim=1, keepdim=True) + 1e-12
+        phi = phi_raw / phi_sum
 
         repro_x = phi @ nodes_x
         repro_y = phi @ nodes_y
@@ -393,26 +437,65 @@ def train_meshfree_kan(
         optimizer_all.step()
 
         if step % log_interval == 0:
-            # H1 error quick check
-            x_val = torch.rand(1024, 2, device=device, requires_grad=True)
-            u_val = model(x_val)
-            grad_pred = torch.autograd.grad(u_val, x_val, torch.ones_like(u_val), create_graph=False)[0]
-            grad_exact = problem.exact_gradient(x_val)
-            h1_err = torch.sqrt(torch.mean(torch.sum((grad_pred - grad_exact) ** 2, dim=1)))
+            # Evaluation (L2 and H1 errors)
+            model.eval()
+            with torch.no_grad():
+                x_val = torch.rand(2000, 2, device=device)
+                u_val = model(x_val)
+                u_exact_val = problem.exact_solution(x_val)
+                l2_err = torch.sqrt(torch.mean((u_val - u_exact_val) ** 2)).item()
+
+            # H1 error (requires gradients)
+            x_val_grad = torch.rand(1024, 2, device=device, requires_grad=True)
+            u_val_grad = model(x_val_grad)
+            grad_pred = torch.autograd.grad(u_val_grad, x_val_grad, torch.ones_like(u_val_grad), create_graph=False)[0]
+            grad_exact = problem.exact_gradient(x_val_grad)
+            h1_err = torch.sqrt(torch.mean(torch.sum((grad_pred - grad_exact) ** 2, dim=1))).item()
+            model.train()
+
+            # Record history
+            history['steps'].append(phase_a_steps + step)
+            history['loss'].append(loss.item())
+            history['linear_repro'].append(loss_linear.item())
+            history['energy'].append(loss_energy.item())
+            history['boundary'].append(loss_bc.item())
+            history['l2_error'].append(l2_err)
+            history['h1_error'].append(h1_err)
+            history['phi_sum_min'].append(stats['phi_sum_min'])
+            history['orphan_ratio'].append(stats['orphan_ratio'])
 
             print(
                 f"Step {step:4d} | Loss={loss.item():.3e} | Energy={loss_energy.item():.3e} | "
-                f"BC={loss_bc.item():.3e} | Linear={loss_linear.item():.3e} | H1={h1_err.item():.3e} | "
+                f"BC={loss_bc.item():.3e} | Linear={loss_linear.item():.3e} | "
+                f"L2={l2_err:.3e} | H1={h1_err:.3e} | "
                 f"phi_sum_min={stats['phi_sum_min']:.3e} | orphan={stats['orphan_ratio']:.3e}"
             )
 
+    print(f"\nPhase B completed.")
+    return history
+
 
 # =============================================================================
-# 6. Main
+# 6. Main Function
 # =============================================================================
-if __name__ == "__main__":
+def main():
+    torch.manual_seed(42)
+    np.random.seed(42)
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Device: {device} | dtype: {torch.get_default_dtype()}")
+    print(f"Device: {device} | dtype: {torch.get_default_dtype()}\n")
+
+    # Setup output directory
+    ROOT = Path(__file__).resolve().parents[2]
+    visualizers.OUTPUT_DIR = str(ROOT / "output" / "other_method_experiments")
+    output_subdir = get_example_output_subdir(__file__)
+    print(f"Output directory: {visualizers.OUTPUT_DIR}/{output_subdir}/\n")
+
+    # Problem definition
+    problem = LinearPatchProblem()
+    print(f"Problem: {problem.name}")
+    print("Domain: [0,1] x [0,1]")
+    print("Exact: u = x + y\n")
 
     # Nodes: 8x8 grid
     n_side = 8
@@ -423,12 +506,19 @@ if __name__ == "__main__":
 
     dx = 1.0 / (n_side - 1)
     radius = 2.5 * dx  # usually enough for full coverage
-    print(f"Nodes: {nodes.shape[0]} | dx={dx:.4f} | radius={radius:.4f}")
+    print(f"Meshfree nodes: {nodes.shape[0]} ({n_side}x{n_side} grid)")
+    print(f"Node spacing: {dx:.4f}")
+    print(f"Support radius: {radius:.4f}\n")
 
-    problem = LinearPatchProblem()
+    # Model
     model = MeshfreeKANNet(nodes, radius, kan_hidden_dim=8).to(device)
+    print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"  - KAN parameters: {sum(p.numel() for p in model.kan.parameters()):,}")
+    print(f"  - Nodal coefficients: {model.w.numel()}\n")
 
-    train_meshfree_kan(
+    # Training
+    print("Starting training...\n")
+    history = train_meshfree_kan(
         model=model,
         problem=problem,
         device=device,
@@ -444,26 +534,48 @@ if __name__ == "__main__":
     )
 
     # Final test
+    print("\nGenerating visualizations...")
     x_test = torch.rand(20000, 2, device=device)
-    u_pred = model(x_test)
-    u_exact = problem.exact_solution(x_test)
-    l2_err = torch.sqrt(torch.mean((u_pred - u_exact) ** 2))
-    print(f"\nFinal L2 Error: {l2_err.item():.6e}")
-
-    # Plot
-    res = 100
-    x_plot = torch.linspace(0, 1, res, device=device)
-    grid_x, grid_y = torch.meshgrid(x_plot, x_plot, indexing="xy")
-    pts = torch.stack([grid_x.flatten(), grid_y.flatten()], dim=1)
-
     with torch.no_grad():
-        u_plot = model(pts).reshape(res, res).cpu().numpy()
-        u_true = (pts[:, 0] + pts[:, 1]).reshape(res, res).cpu().numpy()
-        err_plot = np.abs(u_plot - u_true)
+        u_pred_test = model(x_test)
+    u_exact_test = problem.exact_solution(x_test)
+    l2_err_final = torch.sqrt(torch.mean((u_pred_test - u_exact_test) ** 2))
+    print(f"Final L2 Error: {l2_err_final.item():.6e}")
 
-    plt.figure(figsize=(10, 4))
-    plt.subplot(131); plt.title("Exact"); plt.imshow(u_true, origin="lower"); plt.colorbar()
-    plt.subplot(132); plt.title("Pred");  plt.imshow(u_plot, origin="lower"); plt.colorbar()
-    plt.subplot(133); plt.title("Error"); plt.imshow(err_plot, origin="lower"); plt.colorbar()
-    plt.tight_layout()
-    plt.show()
+    # Generate solution plots
+    res = 100
+    x_plot = np.linspace(0, 1, res)
+    y_plot = np.linspace(0, 1, res)
+    X_plot, Y_plot = np.meshgrid(x_plot, y_plot)
+    x_grid = torch.tensor(np.column_stack([X_plot.ravel(), Y_plot.ravel()]), dtype=torch.float64, device=device)
+
+    model.eval()
+    with torch.no_grad():
+        u_pred = model(x_grid).cpu().numpy().reshape(res, res)
+    u_exact = problem.exact_solution(x_grid).cpu().numpy().reshape(res, res)
+
+    plot_square_triplet(
+        X_plot, Y_plot, u_pred, u_exact,
+        title_prefix="Meshfree KAN v2 (Linear Patch)",
+        filename="solution_triplet.png",
+        val_clim=(0.0, 2.0),
+        err_vmax=0.01,
+        subdir=output_subdir
+    )
+
+    plot_training_history(history,
+                          filename="training_history.png",
+                          subdir=output_subdir)
+
+    # Save history
+    np.savez(
+        os.path.join(visualizers.OUTPUT_DIR, output_subdir, "history.npz"),
+        **history
+    )
+
+    print("\nDone.")
+
+
+if __name__ == "__main__":
+    main()
+

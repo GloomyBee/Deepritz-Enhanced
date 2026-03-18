@@ -1,21 +1,23 @@
 """
-Example 3: Linear patch test (RKPM + SCNI).
-Equation: -Δu = 0 in [0,1]x[0,1]
-Exact: u = x + y
+Example 4: Gaussian peak (high gradient) on a square domain.
+Equation: -Δu = f in [0,1]x[0,1]
+Exact: u = exp(-r^2/alpha^2), r^2 = (x-0.5)^2 + (y-0.5)^2
 """
 
 import sys
-sys.path.append('..')
-
 import os
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.append(ROOT_DIR)
+
 import torch
 import numpy as np
 from pathlib import Path
-from problems import LinearPatchProblem
-from samplers import MeshfreeUtils
-from networks import RKPMNet
-from integrators import SCNIIntegrator
-from trainers import SCNITrainer
+from problems import GaussianPeak2D
+from networks import RitzNet
+from integrators import GaussIntegrator
+from trainers import DeepRitzTrainer
 from visualizers import plot_training_history, plot_square_triplet, get_example_output_subdir
 import visualizers
 
@@ -30,70 +32,58 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Device: {device}")
 
 # Output directory management - use absolute path
-ROOT = Path(__file__).resolve().parents[1]
-visualizers.OUTPUT_DIR = str(ROOT / "output")
+ROOT = Path(__file__).resolve().parents[2]
+visualizers.OUTPUT_DIR = str(ROOT / "output" / "other_method_experiments")
 output_subdir = get_example_output_subdir(__file__)
 print(f"Output directory: {visualizers.OUTPUT_DIR}/{output_subdir}/")
 
 # ============================================================================
 # 1. 定义问题
 # ============================================================================
-problem = LinearPatchProblem()
+alpha = 0.1
+problem = GaussianPeak2D(alpha=alpha, xc=0.5, yc=0.5)
 print(f"Problem: {problem.name}")
-print("Exact: u = x + y")
-print("Target error: < 1e-8")
+print(f"Alpha: {alpha}")
+print("Center: (0.5, 0.5)")
 
 # ============================================================================
-# 2. 生成RKPM节点
+# 2) Model
 # ============================================================================
-nodes_np = MeshfreeUtils.sample_rkpm_nodes(
-    n_total=625,  # 25×25网格
-    x_range=(0, 1),
-    y_range=(0, 1),
-    noise_factor=0.4  # 添加扰动测试鲁棒性
-)
-print(f"\nRKPM nodes: {len(nodes_np)}")
-nodes = torch.tensor(nodes_np, dtype=torch.float32, device=device)
-
-
-# ============================================================================
-# 3.RKPM network
-# ============================================================================
-model = RKPMNet(
-    nodes=nodes,
-    support_factor=2.5
+model = RitzNet(
+    input_dim=2,
+    hidden_dims=[256, 256, 256, 256, 256, 256],
+    output_dim=1
 ).to(device)
+print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
 # ============================================================================
-# 4 SCNI integrator + optimizer
+# 3) Integrator
 # ============================================================================
-integrator = SCNIIntegrator(nodes_np, domain_bounds=(0, 1, 0, 1))
+integrator = GaussIntegrator(nx=24, ny=24, domain_bounds=(0, 1, 0, 1), order=4)
+
+# ============================================================================
+# 4) Optimizer
+# ============================================================================
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
 # ============================================================================
 # 5. 训练
 # ============================================================================
-trainer = SCNITrainer(
+trainer = DeepRitzTrainer(
     model=model,
     problem=problem,
     integrator=integrator,
     optimizer=optimizer,
     device=device,
-    beta_bc=1000.0
+    beta_bc=500.0
 )
 
 print("\nTraining...")
-history = trainer.train(n_steps=5000, log_interval=200, eval_interval=200)
+print("Note: high gradient problem may take longer...")
+history = trainer.train(n_steps=15000, log_interval=500, eval_interval=500)
 
 # ============================================================================
-# 6. 验证结果
-# ============================================================================
-final_l2_error = history['l2_error'][-1]
-print(f"\nFinal L2 error: {final_l2_error:.2e}")
-
-
-# ============================================================================
-# 7. 可视化
+# 6. 可视化
 # ============================================================================
 print("\nGenerating visualizations...")
 
@@ -107,17 +97,16 @@ x_test = torch.tensor(np.column_stack([X.ravel(), Y.ravel()]), dtype=torch.float
 # 预测和解析解
 model.eval()
 with torch.no_grad():
-    u_pred, _, _ = model(x_test)  # RKPM返回 (u, u_x, u_y)
-    u_pred = u_pred.cpu().numpy().reshape(res, res)
+    u_pred = model(x_test).cpu().numpy().reshape(res, res)
 u_exact = problem.exact_solution(x_test).cpu().numpy().reshape(res, res)
 
-# 绘制三联图
+# 绘制三联图（高斯峰值域范围不同）
 plot_square_triplet(
     X, Y, u_pred, u_exact,
-    title_prefix="RKPM+SCNI (Linear Patch)",
+    title_prefix="Deep Ritz (Gaussian Peak)",
     filename="solution_triplet.png",
-    val_clim=(0.0, 2.0),  # u = x + y 范围 [0, 2]
-    err_vmax=1e-6,  # 线性问题误差应该很小
+    val_clim=(0.0, 1.0),
+    err_vmax=0.1,  # 高梯度问题误差可能更大
     subdir=output_subdir
 )
 
