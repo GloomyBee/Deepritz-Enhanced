@@ -11,8 +11,11 @@ if str(ROOT_DIR) not in sys.path:
 
 from examples.meshfree_kan_rkpm_2d_trial_space_value.common import (
     assemble_poisson_penalty_system,
+    compose_frozen_w_loss,
     compute_matrix_stats,
     gauss_legendre_1d,
+    solve_linear_system,
+    stabilize_symmetric_system,
     square_boundary_quadrature,
     square_domain_quadrature,
 )
@@ -68,6 +71,30 @@ class TrialSpaceCommonTests(unittest.TestCase):
         self.assertAlmostEqual(stats["cond_k"], 4.0)
         self.assertAlmostEqual(stats["lambda_min_k"], 2.0)
         self.assertAlmostEqual(stats["lambda_max_k"], 8.0)
+
+    def test_compose_frozen_w_loss_uses_only_energy_and_bc(self):
+        loss = compose_frozen_w_loss(
+            loss_energy=2.0,
+            loss_bc=0.25,
+            beta_bc=4.0,
+        )
+        self.assertAlmostEqual(float(loss), 3.0)
+
+    def test_stabilize_symmetric_system_adds_diagonal_shift_for_singular_matrix(self):
+        matrix = np.array([[2.0, 0.0], [0.0, 0.0]], dtype=np.float64)
+        stabilized, shift = stabilize_symmetric_system(matrix)
+        self.assertGreater(shift, 0.0)
+        np.testing.assert_allclose(stabilized, np.array([[2.0 + shift, 0.0], [0.0, shift]]))
+
+    def test_solve_linear_system_reports_shift_and_solves_stabilized_system(self):
+        matrix = np.array([[2.0, 0.0], [0.0, 0.0]], dtype=np.float64)
+        rhs = np.array([2.0, 0.0], dtype=np.float64)
+        coeffs, solver_metrics = solve_linear_system(matrix, rhs)
+        np.testing.assert_allclose(coeffs, np.array([1.0, 0.0]), atol=1e-10)
+        self.assertGreater(float(solver_metrics["solver_shift"]), 0.0)
+        self.assertIn("shifted", str(solver_metrics["solver_name"]))
+        self.assertLess(float(solver_metrics["solver_residual"]), 1e-8)
+        self.assertAlmostEqual(float(solver_metrics["solver_stabilized_residual"]), 0.0, places=12)
 
 
 if __name__ == "__main__":
