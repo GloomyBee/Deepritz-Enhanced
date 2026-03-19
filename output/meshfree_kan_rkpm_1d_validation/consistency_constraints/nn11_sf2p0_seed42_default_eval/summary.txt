@@ -1,0 +1,5 @@
+case: {'dimension': 1, 'n_nodes': 11, 'h': 0.1, 'support_factor': 2.0, 'support_radius': 0.2, 'quadrature_order': 12, 'seed': 42}
+learned_moment_matrix_residual_fro: 0.0014828880441535076
+learned_derivative_matrix_residual_fro: 0.0840308189419103
+rkpm_moment_matrix_residual_fro: 4.14517661666801e-10
+rkpm_derivative_matrix_residual_fro: 1.3049527970923387e-09

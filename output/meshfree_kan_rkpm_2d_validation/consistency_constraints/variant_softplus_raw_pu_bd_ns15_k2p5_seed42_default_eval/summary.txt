@@ -1,0 +1,5 @@
+case: {'dimension': 2, 'variant': 'softplus_raw_pu_bd', 'n_side': 15, 'n_nodes': 225, 'h': 0.07142857142857142, 'kappa': 2.5, 'support_radius': 0.17857142857142855, 'quadrature_order': 8, 'seed': 42}
+learned_moment_matrix_residual_fro: 0.007687372578227473
+learned_derivative_matrix_residual_fro: 0.3925806612751915
+rkpm_moment_matrix_residual_fro: 1.6653345369377348e-16
+rkpm_derivative_matrix_residual_fro: 4.014298491795958e-14
