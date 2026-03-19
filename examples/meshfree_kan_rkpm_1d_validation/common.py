@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import sys
@@ -771,6 +771,112 @@ def plot_main_figure_consistency_1d(
 
     _plot_history_series(axes[1, 1], history)
     _save_figure(fig, path)
+
+def ensure_legacy_figure_artifacts_1d(out_dir: Path) -> tuple[Path, Path]:
+    figures_dir = Path(out_dir) / "figures"
+    diagnostics_dir = figures_dir / "diagnostics"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    diagnostics_dir.mkdir(parents=True, exist_ok=True)
+    return figures_dir, diagnostics_dir
+
+
+def _select_shape_validation_metric_items(metrics: dict[str, Any]) -> list[tuple[str, float]]:
+    metric_items: list[tuple[str, float]] = [
+        ("global_l2", float(metrics["global_l2"])),
+        ("center_l2", float(metrics["center_l2"])),
+        ("boundary_l2", float(metrics["boundary_l2"])),
+    ]
+    if "pu_raw_sum_rmse" in metrics:
+        metric_items.append(("pu_raw_sum_rmse", float(metrics["pu_raw_sum_rmse"])))
+    elif "pu_max_error" in metrics:
+        metric_items.append(("pu_max_error", float(metrics["pu_max_error"])))
+    if "linear_reproduction_rmse" in metrics:
+        metric_items.append(("linear_reproduction_rmse", float(metrics["linear_reproduction_rmse"])))
+    return metric_items
+
+
+def plot_main_figure_shape_validation_1d(
+    x_eval: np.ndarray,
+    phi_rkpm: np.ndarray,
+    phi_kan: np.ndarray,
+    history: dict[str, list[float]],
+    center_idx: int,
+    boundary_idx: int,
+    metrics: dict[str, Any],
+    path: Path,
+    history_keys: list[str] | None = None,
+) -> None:
+    x_eval = np.asarray(x_eval, dtype=np.float64).reshape(-1)
+    phi_rkpm = np.asarray(phi_rkpm, dtype=np.float64)
+    phi_kan = np.asarray(phi_kan, dtype=np.float64)
+    fig, axes = plt.subplots(2, 2, figsize=MAIN_FIGURE_SIZE)
+
+    ax = axes[0, 0]
+    ax.plot(x_eval, phi_rkpm[:, center_idx], color=RKPM_COLOR, lw=1.5, ls='--', label=f'RKPM center ({center_idx})')
+    ax.plot(x_eval, phi_kan[:, center_idx], color=LEARNED_COLOR, lw=1.8, label=f'Learned center ({center_idx})')
+    ax.plot(x_eval, phi_rkpm[:, boundary_idx], color=AUX_COLORS[3], lw=1.5, ls='--', label=f'RKPM boundary ({boundary_idx})')
+    ax.plot(x_eval, phi_kan[:, boundary_idx], color=AUX_COLORS[2], lw=1.8, label=f'Learned boundary ({boundary_idx})')
+    _style_line_axis(ax, 'Representative shape functions', 'x', 'phi')
+    ax.legend(fontsize=8)
+
+    err_center = np.abs(phi_kan[:, center_idx] - phi_rkpm[:, center_idx])
+    err_boundary = np.abs(phi_kan[:, boundary_idx] - phi_rkpm[:, boundary_idx])
+    ax = axes[0, 1]
+    ax.semilogy(x_eval, np.maximum(err_center, 1e-16), color=LEARNED_COLOR, lw=1.8, label='center error')
+    ax.semilogy(x_eval, np.maximum(err_boundary, 1e-16), color=RKPM_COLOR, lw=1.8, label='boundary error')
+    _style_line_axis(ax, 'Pointwise shape error', 'x', 'abs error')
+    ax.legend(fontsize=8)
+
+    metric_items = _select_shape_validation_metric_items(metrics)
+    metric_labels = [label for label, _ in metric_items]
+    metric_values = np.array([value for _, value in metric_items], dtype=np.float64)
+    ax = axes[1, 0]
+    x_pos = np.arange(len(metric_items), dtype=np.float64)
+    ax.plot(x_pos, np.maximum(metric_values, 1e-16), 'o-', color=LEARNED_COLOR, lw=1.8, ms=6)
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(metric_labels, rotation=18, ha='right')
+    _style_line_axis(ax, 'Validation indicators', 'metric', 'value', log_scale=True)
+
+    ax = axes[1, 1]
+    steps = np.array(history.get('steps', []), dtype=np.float64)
+    keys = history_keys or ['loss', 'teacher', 'linear', 'pu', 'bd', 'reg']
+    plotted = False
+    for key in keys:
+        values = np.array(history.get(key, []), dtype=np.float64)
+        if values.size == 0 or steps.size == 0 or np.allclose(values, 0.0):
+            continue
+        count = min(values.size, steps.size)
+        ax.semilogy(steps[:count], np.maximum(values[:count], 1e-16), lw=1.8, label=key)
+        plotted = True
+    _style_line_axis(ax, 'Training history', 'step', 'loss')
+    if plotted:
+        ax.legend(fontsize=8, ncol=2)
+    else:
+        ax.text(0.5, 0.5, 'No history available', ha='center', va='center', transform=ax.transAxes)
+
+    _save_figure(fig, path)
+
+
+def plot_diagnostic_shape_overlay_1d(
+    x_eval: np.ndarray,
+    phi_rkpm: np.ndarray,
+    phi_kan: np.ndarray,
+    path: Path,
+    stride: int | None = None,
+) -> None:
+    x_eval = np.asarray(x_eval, dtype=np.float64).reshape(-1)
+    phi_rkpm = np.asarray(phi_rkpm, dtype=np.float64)
+    phi_kan = np.asarray(phi_kan, dtype=np.float64)
+    n_nodes = phi_kan.shape[1]
+    step = stride or max(1, n_nodes // 5)
+    fig, ax = plt.subplots(1, 1, figsize=(12.0, 6.0))
+    for index in range(0, n_nodes, step):
+        ax.plot(x_eval, phi_rkpm[:, index], color=RKPM_COLOR, alpha=0.35, lw=1.2)
+        ax.plot(x_eval, phi_kan[:, index], color=LEARNED_COLOR, alpha=0.35, ls='--', lw=1.2)
+    _style_line_axis(ax, 'Subset overlay of node shape functions', 'x', 'phi_i(x)')
+    ax.text(0.02, 0.04, 'solid: learned, dashed: RKPM', transform=ax.transAxes, fontsize=9)
+    _save_figure(fig, path)
+
 
 def plot_consistency_summary(entries: list[dict[str, Any]], path: Path) -> None:
     case_labels = [item["case_label"] for item in entries]

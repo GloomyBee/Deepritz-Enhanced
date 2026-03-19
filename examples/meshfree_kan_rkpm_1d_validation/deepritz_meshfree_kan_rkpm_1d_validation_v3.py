@@ -28,6 +28,11 @@ import torch.nn as nn
 
 from visualizers import get_example_output_subdir
 import visualizers
+from examples.meshfree_kan_rkpm_1d_validation.common import (
+    ensure_legacy_figure_artifacts_1d,
+    plot_diagnostic_shape_overlay_1d,
+    plot_main_figure_shape_validation_1d,
+)
 
 
 torch.set_default_dtype(torch.float64)
@@ -266,69 +271,25 @@ def build_plots(
     center_idx: int,
     boundary_idx: int,
     out_dir: Path,
+    metrics: dict,
 ):
-    # Main comparison figure
-    fig, axes = plt.subplots(2, 2, figsize=(13, 8))
-    ax = axes[0, 0]
-    ax.plot(x_eval, phi_rkpm[:, center_idx], color="tab:blue", lw=2, label="RKPM Exact")
-    ax.plot(x_eval, phi_kan[:, center_idx], color="tab:red", lw=2, ls="--", label="KAN Learned")
-    ax.set_title(f"Center Node Shape Function (index={center_idx})")
-    ax.set_xlabel("x")
-    ax.set_ylabel(r"$\phi(x)$")
-    ax.grid(True, ls="--", alpha=0.4)
-    ax.legend()
-
-    ax = axes[0, 1]
-    ax.plot(x_eval, phi_rkpm[:, boundary_idx], color="tab:blue", lw=2, label="RKPM Exact")
-    ax.plot(x_eval, phi_kan[:, boundary_idx], color="tab:red", lw=2, ls="--", label="KAN Learned")
-    ax.set_title(f"Boundary Node Shape Function (index={boundary_idx})")
-    ax.set_xlabel("x")
-    ax.set_ylabel(r"$\phi(x)$")
-    ax.grid(True, ls="--", alpha=0.4)
-    ax.legend()
-
-    err_center = np.abs(phi_kan[:, center_idx] - phi_rkpm[:, center_idx])
-    err_boundary = np.abs(phi_kan[:, boundary_idx] - phi_rkpm[:, boundary_idx])
-    ax = axes[1, 0]
-    ax.semilogy(x_eval, np.maximum(err_center, 1e-16), lw=2, label="Center Error")
-    ax.semilogy(x_eval, np.maximum(err_boundary, 1e-16), lw=2, label="Boundary Error")
-    ax.set_title("Pointwise Absolute Error")
-    ax.set_xlabel("x")
-    ax.set_ylabel("abs error")
-    ax.grid(True, which="both", ls="--", alpha=0.4)
-    ax.legend()
-
-    ax = axes[1, 1]
-    steps = np.array(history["steps"], dtype=np.int64)
-    ax.semilogy(steps, np.maximum(np.array(history["loss"]), 1e-16), lw=2, label="Total")
-    ax.semilogy(steps, np.maximum(np.array(history["linear"]), 1e-16), lw=2, label="Linear")
-    ax.semilogy(steps, np.maximum(np.array(history["pu"]), 1e-16), lw=2, label="PU")
-    if "bd" in history and len(history["bd"]) > 0:
-        ax.semilogy(steps, np.maximum(np.array(history["bd"]), 1e-16), lw=2, label="BD")
-    ax.set_title("Phase A Training Curves")
-    ax.set_xlabel("step")
-    ax.set_ylabel("loss")
-    ax.grid(True, which="both", ls="--", alpha=0.4)
-    ax.legend()
-
-    fig.tight_layout()
-    fig.savefig(out_dir / "shape_compare.png", dpi=160, bbox_inches="tight")
-    plt.close(fig)
-
-    # Optional all-node heatmap-like overlay (compact check)
-    fig, ax = plt.subplots(1, 1, figsize=(12, 6))
-    n_nodes = phi_kan.shape[1]
-    step = max(1, n_nodes // 5)
-    for i in range(0, n_nodes, step):
-        ax.plot(x_eval, phi_rkpm[:, i], color="tab:blue", alpha=0.35)
-        ax.plot(x_eval, phi_kan[:, i], color="tab:red", alpha=0.35, ls="--")
-    ax.set_title("Subset of Node Shape Functions (blue=RKPM, red=KAN)")
-    ax.set_xlabel("x")
-    ax.set_ylabel(r"$\phi_i(x)$")
-    ax.grid(True, ls="--", alpha=0.4)
-    fig.tight_layout()
-    fig.savefig(out_dir / "shape_subset_overlay.png", dpi=160, bbox_inches="tight")
-    plt.close(fig)
+    figures_dir, diagnostics_dir = ensure_legacy_figure_artifacts_1d(out_dir)
+    plot_main_figure_shape_validation_1d(
+        x_eval=x_eval,
+        phi_rkpm=phi_rkpm,
+        phi_kan=phi_kan,
+        history=history,
+        center_idx=center_idx,
+        boundary_idx=boundary_idx,
+        metrics=metrics,
+        path=figures_dir / "main_figure.png",
+    )
+    plot_diagnostic_shape_overlay_1d(
+        x_eval=x_eval,
+        phi_rkpm=phi_rkpm,
+        phi_kan=phi_kan,
+        path=diagnostics_dir / "shape_subset_overlay.png",
+    )
 
 
 def main():
@@ -474,6 +435,7 @@ def main():
         center_idx=center_idx,
         boundary_idx=boundary_idx,
         out_dir=out_dir,
+        metrics=metrics,
     )
 
     print("\nValidation summary:")
