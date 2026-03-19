@@ -17,6 +17,8 @@ from examples.meshfree_kan_rkpm_2d_validation.common import (
     ensure_run_artifacts,
     grid_points,
     plot_heatmap,
+    plot_main_figure_patch_test,
+    plot_patch_test_summary_figure,
     plot_training_curves,
     resolve_variant_config,
     save_run_bundle,
@@ -84,11 +86,30 @@ def main() -> None:
     linear_y_field = (phi @ nodes_np[:, 1] - x_eval[:, 1]).reshape(args.grid_resolution, args.grid_resolution)
     lambda_field = np.sum(np.abs(phi), axis=1).reshape(args.grid_resolution, args.grid_resolution)
 
-    plot_training_curves(history, artifacts.figures_dir / "loss_curves.png", "Patch Test Phase A")
-    plot_heatmap(x_grid, y_grid, pu_field, artifacts.figures_dir / "pu_heatmap.png", "PU residual")
-    plot_heatmap(x_grid, y_grid, linear_x_field, artifacts.figures_dir / "linear_x_heatmap.png", "Linear reproduction x")
-    plot_heatmap(x_grid, y_grid, linear_y_field, artifacts.figures_dir / "linear_y_heatmap.png", "Linear reproduction y")
-    plot_heatmap(x_grid, y_grid, lambda_field, artifacts.figures_dir / "lambda_h_heatmap.png", "Lambda_h field")
+    plot_main_figure_patch_test(
+        x_grid,
+        y_grid,
+        pu_field,
+        linear_x_field,
+        linear_y_field,
+        lambda_field,
+        history,
+        artifacts.figures_dir / "main_figure.png",
+    )
+    plot_patch_test_summary_figure(
+        x_grid,
+        y_grid,
+        linear_x_field,
+        linear_y_field,
+        nodes_np,
+        patch_metrics,
+        artifacts.figures_dir / "summary_figure.png",
+    )
+    plot_training_curves(history, artifacts.diagnostics_dir / "loss_curves.png", "Patch Test Phase A")
+    plot_heatmap(x_grid, y_grid, pu_field, artifacts.diagnostics_dir / "pu_heatmap.png", "PU residual", cmap="coolwarm")
+    plot_heatmap(x_grid, y_grid, linear_x_field, artifacts.diagnostics_dir / "linear_x_heatmap.png", "Linear reproduction x", cmap="coolwarm")
+    plot_heatmap(x_grid, y_grid, linear_y_field, artifacts.diagnostics_dir / "linear_y_heatmap.png", "Linear reproduction y", cmap="coolwarm")
+    plot_heatmap(x_grid, y_grid, lambda_field, artifacts.diagnostics_dir / "lambda_h_heatmap.png", "Lambda_h field")
 
     metrics = {
         "problem_name": "linear_patch_2d",

@@ -2,7 +2,6 @@ import argparse
 import sys
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -20,6 +19,8 @@ from examples.meshfree_kan_rkpm_2d_validation.common import (
     grid_points,
     generate_square_nodes,
     plot_heatmap,
+    plot_main_figure_stability,
+    plot_stability_summary_2d,
     plot_training_curves,
     resolve_variant_config,
     save_json,
@@ -28,19 +29,6 @@ from examples.meshfree_kan_rkpm_2d_validation.common import (
     seed_everything,
     train_phase_a,
 )
-
-
-def plot_lambda_bar(entries: list[dict], path: Path) -> None:
-    labels = [item["variant"] for item in entries]
-    values = [item["lambda_h_max"] for item in entries]
-    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    ax.bar(labels, values, color="tab:blue")
-    ax.set_ylabel("lambda_h_max")
-    ax.set_title("2D stability ablation")
-    ax.tick_params(axis="x", rotation=15)
-    fig.tight_layout()
-    fig.savefig(path, dpi=160, bbox_inches="tight")
-    plt.close(fig)
 
 
 def main() -> None:
@@ -115,8 +103,17 @@ def main() -> None:
             **compute_patch_metrics(phi, nodes_np, x_eval),
         }
         lambda_field = np.sum(np.abs(phi), axis=1).reshape(args.grid_resolution, args.grid_resolution)
-        plot_training_curves(history, artifacts.figures_dir / "loss_curves.png", f"Ablation {variant}")
-        plot_heatmap(x_grid, y_grid, lambda_field, artifacts.figures_dir / "lambda_h_heatmap.png", f"Lambda_h {variant}")
+        plot_main_figure_stability(
+            x_grid=x_grid,
+            y_grid=y_grid,
+            lambda_field=lambda_field,
+            nodes=nodes_np,
+            metrics=metrics,
+            history=history,
+            path=artifacts.figures_dir / "main_figure.png",
+        )
+        plot_training_curves(history, artifacts.diagnostics_dir / "loss_curves.png", f"Ablation {variant}")
+        plot_heatmap(x_grid, y_grid, lambda_field, artifacts.diagnostics_dir / "lambda_h_heatmap.png", f"Lambda_h {variant}")
         save_run_bundle(
             artifacts=artifacts,
             config=vars(args),
@@ -140,7 +137,7 @@ def main() -> None:
     save_json(group_root / "stability_summary.json", {"entries": summary_entries})
     save_summary(group_root / "stability_summary.txt", [str(item) for item in summary_entries])
     if summary_entries:
-        plot_lambda_bar(summary_entries, group_root / "stability_summary.png")
+        plot_stability_summary_2d(summary_entries, group_root / "stability_summary.png")
 
 
 if __name__ == "__main__":

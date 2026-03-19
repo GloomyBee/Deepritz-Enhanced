@@ -2,7 +2,6 @@ import argparse
 import sys
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -21,6 +20,9 @@ from examples.meshfree_kan_rkpm_2d_validation.common import (
     evaluate_solution_metrics,
     generate_square_nodes,
     parse_float_list,
+    plot_heatmap,
+    plot_irregular_summary_2d,
+    plot_main_figure_irregular_nodes,
     plot_solution_triplet,
     plot_training_curves,
     resolve_variant_config,
@@ -32,27 +34,6 @@ from examples.meshfree_kan_rkpm_2d_validation.common import (
     train_phase_b_poisson,
     merge_histories,
 )
-
-
-def plot_jitter_curve(entries: list[dict], path: Path) -> None:
-    jitters = np.array([item["jitter"] for item in entries], dtype=np.float64)
-    l2 = np.array([item["l2_error"] for item in entries], dtype=np.float64)
-    lam = np.array([item["lambda_h_max"] for item in entries], dtype=np.float64)
-    order = np.argsort(jitters)
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    axes[0].plot(jitters[order], l2[order], "o-")
-    axes[0].set_title("Jitter vs L2")
-    axes[0].set_xlabel("jitter")
-    axes[0].set_ylabel("L2 error")
-    axes[1].plot(jitters[order], lam[order], "s-")
-    axes[1].set_title("Jitter vs Lambda_h")
-    axes[1].set_xlabel("jitter")
-    axes[1].set_ylabel("lambda_h_max")
-    for axis in axes:
-        axis.grid(True, ls="--", alpha=0.4)
-    fig.tight_layout()
-    fig.savefig(path, dpi=160, bbox_inches="tight")
-    plt.close(fig)
 
 
 def main() -> None:
@@ -160,13 +141,26 @@ def main() -> None:
             **solution_metrics,
         }
         history = merge_histories(history_a, history_b)
+        lambda_field = np.sum(np.abs(phi_eval), axis=1).reshape(args.grid_resolution, args.grid_resolution)
+        plot_main_figure_irregular_nodes(
+            x_grid=x_grid,
+            y_grid=y_grid,
+            pred=pred,
+            exact=exact,
+            nodes=nodes_np,
+            lambda_field=lambda_field,
+            history=history,
+            path=artifacts.figures_dir / "main_figure.png",
+            phase_split_step=float(args.phase_a_steps),
+        )
         plot_training_curves(
             history,
-            artifacts.figures_dir / "loss_curves.png",
+            artifacts.diagnostics_dir / "loss_curves.png",
             f"Irregular jitter={jitter}",
             phase_split_step=float(args.phase_a_steps),
         )
-        plot_solution_triplet(x_grid, y_grid, pred, exact, artifacts.figures_dir / "solution_triplet.png", "Deep-RKPM-KAN")
+        plot_solution_triplet(x_grid, y_grid, pred, exact, artifacts.diagnostics_dir / "solution_triplet.png", "Deep-RKPM-KAN")
+        plot_heatmap(x_grid, y_grid, lambda_field, artifacts.diagnostics_dir / "lambda_h_heatmap.png", "Lambda_h field")
         save_run_bundle(
             artifacts=artifacts,
             config=vars(args),
@@ -195,7 +189,7 @@ def main() -> None:
     save_json(group_root / "irregular_summary.json", {"entries": summary_entries})
     save_summary(group_root / "irregular_summary.txt", [str(item) for item in summary_entries])
     if summary_entries:
-        plot_jitter_curve(summary_entries, group_root / "irregular_summary.png")
+        plot_irregular_summary_2d(summary_entries, group_root / "irregular_summary.png")
 
 
 if __name__ == "__main__":

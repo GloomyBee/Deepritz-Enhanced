@@ -91,16 +91,30 @@ METHOD_LABELS = {
 }
 
 
+FIGURE_DPI = 180
+MAIN_FIGURE_SIZE = (12.0, 9.0)
+SUMMARY_FIGURE_SIZE = (12.0, 8.2)
+DIAGNOSTIC_FIGURE_SIZE = (6.0, 5.0)
+LEARNED_COLOR = "#1f4e79"
+RKPM_COLOR = "#b03a2e"
+AUX_COLORS = ["#1f4e79", "#b03a2e", "#2f7d32", "#7a3e9d", "#8c5a2b"]
+SOLUTION_CMAP = "inferno"
+ERROR_CMAP = "magma"
+STRUCTURE_CMAP = "viridis"
+
+
 @dataclass
 class RunArtifacts:
     root_dir: Path
     figures_dir: Path
+    diagnostics_dir: Path
 
 
 @dataclass
 class TrialSpaceArtifacts:
     root_dir: Path
     figures_dir: Path
+    diagnostics_dir: Path
     methods_dir: Path
 
 
@@ -145,17 +159,21 @@ def ensure_run_artifacts(group: str, case_name: str) -> RunArtifacts:
 def ensure_trial_space_artifacts(group: str, case_name: str) -> TrialSpaceArtifacts:
     root_dir = ROOT_DIR / "output" / "meshfree_kan_rkpm_2d_trial_space_value" / group / case_name
     figures_dir = root_dir / "figures"
+    diagnostics_dir = figures_dir / "diagnostics"
     methods_dir = root_dir / "methods"
     figures_dir.mkdir(parents=True, exist_ok=True)
+    diagnostics_dir.mkdir(parents=True, exist_ok=True)
     methods_dir.mkdir(parents=True, exist_ok=True)
-    return TrialSpaceArtifacts(root_dir=root_dir, figures_dir=figures_dir, methods_dir=methods_dir)
+    return TrialSpaceArtifacts(root_dir=root_dir, figures_dir=figures_dir, diagnostics_dir=diagnostics_dir, methods_dir=methods_dir)
 
 
 def ensure_method_artifacts(artifacts: TrialSpaceArtifacts, method_name: str) -> RunArtifacts:
     root_dir = artifacts.methods_dir / method_name
     figures_dir = root_dir / "figures"
+    diagnostics_dir = figures_dir / "diagnostics"
     figures_dir.mkdir(parents=True, exist_ok=True)
-    return RunArtifacts(root_dir=root_dir, figures_dir=figures_dir)
+    diagnostics_dir.mkdir(parents=True, exist_ok=True)
+    return RunArtifacts(root_dir=root_dir, figures_dir=figures_dir, diagnostics_dir=diagnostics_dir)
 
 
 def save_json(path: Path, payload: dict[str, Any]) -> None:
@@ -771,30 +789,82 @@ def evaluate_solution_metrics(
     return metrics, x_grid, y_grid, pred_np, exact_np + 0.0 * error_np
 
 
+def _save_figure(fig: plt.Figure, path: Path) -> None:
+    fig.tight_layout()
+    fig.savefig(path, dpi=FIGURE_DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _style_line_axis(ax: plt.Axes, title: str, xlabel: str, ylabel: str, log_scale: bool = False) -> None:
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    if log_scale:
+        ax.set_yscale("log")
+    ax.grid(True, which="both", ls="--", alpha=0.35)
+
+
+def _plot_history_series(
+    ax: plt.Axes,
+    history: dict[str, list[float]],
+    phase_split_step: float | None = None,
+) -> None:
+    steps = np.array(history.get("steps", []), dtype=np.float64)
+    if steps.size == 0:
+        ax.text(0.5, 0.56, "No iterative training", ha="center", va="center", transform=ax.transAxes)
+        ax.text(0.5, 0.42, "Classical solve / direct assembly", ha="center", va="center", transform=ax.transAxes, fontsize=9)
+        _style_line_axis(ax, "Solver history", "step", "loss / metric")
+        return
+    for key, color in zip(["loss", "linear", "pu", "bd", "teacher", "reg", "energy", "bc", "val_l2", "val_h1"], AUX_COLORS + ["#666666", AUX_COLORS[0], AUX_COLORS[1], AUX_COLORS[2], AUX_COLORS[3]]):
+        values = np.array(history.get(key, []), dtype=np.float64)
+        if values.size == 0:
+            continue
+        if key in {"val_l2", "val_h1"}:
+            values = values[values > 0.0]
+            x_values = steps[-values.size :] if values.size else np.array([], dtype=np.float64)
+        else:
+            count = min(values.size, steps.size)
+            values = values[:count]
+            x_values = steps[:count]
+        if values.size == 0 or x_values.size == 0 or np.allclose(values, 0.0):
+            continue
+        ax.semilogy(x_values, np.maximum(values, 1e-16), lw=1.8, color=color, label=key)
+    if phase_split_step is not None:
+        ax.axvline(phase_split_step, color="#444444", lw=1.2, ls=":", label="phase switch")
+    _style_line_axis(ax, "Training History", "step", "loss / metric")
+    if ax.lines:
+        ax.legend(fontsize=8, ncol=2)
+
+
+def _plot_field_on_axis(fig: plt.Figure, ax: plt.Axes, x_grid: np.ndarray, y_grid: np.ndarray, values: np.ndarray, title: str, cmap: str) -> None:
+    contour = ax.contourf(x_grid, y_grid, values, levels=100, cmap=cmap)
+    fig.colorbar(contour, ax=ax, fraction=0.046, pad=0.04)
+    ax.set_title(title)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_aspect("equal")
+
+
 def plot_training_curves(
     history: dict[str, list[float]],
     path: Path,
     title: str,
     phase_split_step: float | None = None,
 ) -> None:
-    steps = np.array(history["steps"], dtype=np.float64)
+    steps = np.array(history.get("steps", []), dtype=np.float64)
 
     def plot_series(ax: plt.Axes, x_values: np.ndarray, y_values: np.ndarray, label: str) -> None:
         if x_values.size == 0 or y_values.size == 0:
             return
         if np.allclose(y_values, 0.0):
             return
-        ax.semilogy(x_values, np.maximum(y_values, 1e-16), lw=2, label=label)
+        ax.semilogy(x_values, np.maximum(y_values, 1e-16), lw=1.8, label=label)
 
     def finalize(ax: plt.Axes, fig: plt.Figure, save_path: Path, figure_title: str) -> None:
-        ax.set_title(figure_title)
-        ax.set_xlabel("step")
-        ax.set_ylabel("loss / metric")
-        ax.grid(True, which="both", ls="--", alpha=0.4)
-        ax.legend(fontsize=8)
-        fig.tight_layout()
-        fig.savefig(save_path, dpi=160, bbox_inches="tight")
-        plt.close(fig)
+        _style_line_axis(ax, figure_title, "step", "loss / metric")
+        if ax.lines:
+            ax.legend(fontsize=8)
+        _save_figure(fig, save_path)
 
     if phase_split_step is None:
         fig, ax = plt.subplots(1, 1, figsize=(10, 5))
@@ -854,18 +924,11 @@ def plot_heatmap(
     values: np.ndarray,
     path: Path,
     title: str,
-    cmap: str = "viridis",
+    cmap: str = STRUCTURE_CMAP,
 ) -> None:
-    fig, ax = plt.subplots(1, 1, figsize=(6, 5))
-    contour = ax.contourf(x_grid, y_grid, values, levels=100, cmap=cmap)
-    plt.colorbar(contour, ax=ax)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_title(title)
-    ax.set_aspect("equal")
-    fig.tight_layout()
-    fig.savefig(path, dpi=160, bbox_inches="tight")
-    plt.close(fig)
+    fig, ax = plt.subplots(1, 1, figsize=DIAGNOSTIC_FIGURE_SIZE)
+    _plot_field_on_axis(fig, ax, x_grid, y_grid, values, title, cmap)
+    _save_figure(fig, path)
 
 
 def plot_solution_triplet(
@@ -879,20 +942,44 @@ def plot_solution_triplet(
     error = np.abs(pred - exact)
     fig, axes = plt.subplots(1, 3, figsize=(14, 4))
     for axis, values, title, cmap in [
-        (axes[0], pred, f"{title_prefix} Prediction", "inferno"),
-        (axes[1], exact, "Exact Solution", "inferno"),
-        (axes[2], error, "Absolute Error", "magma"),
+        (axes[0], pred, f"{title_prefix} Prediction", SOLUTION_CMAP),
+        (axes[1], exact, "Exact Solution", SOLUTION_CMAP),
+        (axes[2], error, "Absolute Error", ERROR_CMAP),
     ]:
-        contour = axis.contourf(x_grid, y_grid, values, levels=100, cmap=cmap)
-        plt.colorbar(contour, ax=axis)
-        axis.set_aspect("equal")
-        axis.set_xlabel("x")
-        axis.set_ylabel("y")
-        axis.set_title(title)
-    fig.tight_layout()
-    fig.savefig(path, dpi=160, bbox_inches="tight")
-    plt.close(fig)
+        _plot_field_on_axis(fig, axis, x_grid, y_grid, values, title, cmap)
+    _save_figure(fig, path)
 
+
+def plot_main_figure_trial_method(
+    x_grid: np.ndarray,
+    y_grid: np.ndarray,
+    pred: np.ndarray,
+    exact: np.ndarray,
+    history: dict[str, list[float]],
+    metrics: dict[str, Any],
+    title_prefix: str,
+    path: Path,
+) -> None:
+    error = np.abs(pred - exact)
+    fig, axes = plt.subplots(2, 2, figsize=MAIN_FIGURE_SIZE)
+    _plot_field_on_axis(fig, axes[0, 0], x_grid, y_grid, pred, f"{title_prefix} prediction", SOLUTION_CMAP)
+    _plot_field_on_axis(fig, axes[0, 1], x_grid, y_grid, exact, "Exact field", SOLUTION_CMAP)
+    _plot_field_on_axis(fig, axes[1, 0], x_grid, y_grid, error, "Absolute error", ERROR_CMAP)
+    if history.get("steps"):
+        _plot_history_series(axes[1, 1], history)
+    else:
+        axes[1, 1].axis("off")
+        lines = [
+            "Solver information",
+            "",
+            f"solver: {metrics.get('solver_name', 'N/A')}",
+            f"cond_k: {metrics.get('cond_k', float('nan')):.3e}",
+            f"lambda_min_k: {metrics.get('lambda_min_k', float('nan')):.3e}",
+            f"solver_residual: {metrics.get('solver_residual', float('nan')):.3e}",
+            f"solver_shift: {metrics.get('solver_shift', float('nan')):.3e}",
+        ]
+        axes[1, 1].text(0.03, 0.97, "\n".join(lines), va="top", ha="left", fontsize=10, family="monospace")
+    _save_figure(fig, path)
 
 def save_run_bundle(
     artifacts: RunArtifacts,
@@ -1206,52 +1293,42 @@ def history_to_arrays(history: dict[str, list[float]]) -> dict[str, np.ndarray]:
 
 def plot_metric_bars(entries: list[dict[str, Any]], path: Path) -> None:
     methods = [item["method_label"] for item in entries]
-    x_pos = np.arange(len(entries))
-    l2 = np.array([item["l2_error"] for item in entries], dtype=np.float64)
-    h1 = np.array([item["h1_semi_error"] for item in entries], dtype=np.float64)
-    boundary = np.array([item["boundary_l2"] for item in entries], dtype=np.float64)
+    x_pos = np.arange(len(entries), dtype=np.float64)
+    l2 = np.maximum(np.array([item["l2_error"] for item in entries], dtype=np.float64), 1e-16)
+    h1 = np.maximum(np.array([item["h1_semi_error"] for item in entries], dtype=np.float64), 1e-16)
+    boundary = np.maximum(np.array([item["boundary_l2"] for item in entries], dtype=np.float64), 1e-16)
 
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.5))
-    for ax, values, title in zip(
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.6))
+    for ax, values, title, color, marker in zip(
         axes,
         [l2, h1, boundary],
         ["L2 error", "H1 semi error", "Boundary L2"],
+        [LEARNED_COLOR, RKPM_COLOR, AUX_COLORS[2]],
+        ["o", "s", "^"] ,
     ):
-        ax.bar(x_pos, values, color=["#4477aa", "#66ccee", "#228833"][: len(entries)])
+        ax.plot(x_pos, values, marker=marker, lw=1.8, ms=6, color=color)
         ax.set_xticks(x_pos)
         ax.set_xticklabels(methods, rotation=20, ha="right")
-        ax.set_yscale("log")
-        ax.set_title(title)
-        ax.grid(True, axis="y", ls="--", alpha=0.4)
-    fig.tight_layout()
-    fig.savefig(path, dpi=160, bbox_inches="tight")
-    plt.close(fig)
+        _style_line_axis(ax, title, "method", "error", log_scale=True)
+    _save_figure(fig, path)
 
 
 def plot_conditioning_bars(entries: list[dict[str, Any]], path: Path) -> None:
     methods = [item["method_label"] for item in entries]
-    x_pos = np.arange(len(entries))
-    cond_values = np.array([item["cond_k"] for item in entries], dtype=np.float64)
+    x_pos = np.arange(len(entries), dtype=np.float64)
+    cond_values = np.maximum(np.array([item["cond_k"] for item in entries], dtype=np.float64), 1e-16)
     lambda_min = np.array([item["lambda_min_k"] for item in entries], dtype=np.float64)
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
-    axes[0].bar(x_pos, cond_values, color="#cc6677")
+    fig, axes = plt.subplots(1, 2, figsize=(10.4, 4.6))
+    axes[0].plot(x_pos, cond_values, "o-", lw=1.8, ms=6, color=LEARNED_COLOR)
+    axes[1].plot(x_pos, lambda_min, "s-", lw=1.8, ms=6, color=RKPM_COLOR)
     axes[0].set_xticks(x_pos)
     axes[0].set_xticklabels(methods, rotation=20, ha="right")
-    axes[0].set_yscale("log")
-    axes[0].set_title("Condition number")
-    axes[0].grid(True, axis="y", ls="--", alpha=0.4)
-
-    axes[1].bar(x_pos, lambda_min, color="#aa4499")
     axes[1].set_xticks(x_pos)
     axes[1].set_xticklabels(methods, rotation=20, ha="right")
-    axes[1].set_title("Smallest eigenvalue")
-    axes[1].grid(True, axis="y", ls="--", alpha=0.4)
-
-    fig.tight_layout()
-    fig.savefig(path, dpi=160, bbox_inches="tight")
-    plt.close(fig)
-
+    _style_line_axis(axes[0], "Condition number", "method", "cond_k", log_scale=True)
+    _style_line_axis(axes[1], "Smallest eigenvalue", "method", "lambda_min_k")
+    _save_figure(fig, path)
 
 def plot_representative_shape_functions(
     model: MeshfreeKAN2D,

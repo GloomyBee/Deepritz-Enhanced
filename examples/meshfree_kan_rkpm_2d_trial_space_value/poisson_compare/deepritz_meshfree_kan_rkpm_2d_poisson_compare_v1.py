@@ -20,6 +20,7 @@ from examples.meshfree_kan_rkpm_2d_trial_space_value.common import (
     generate_square_nodes,
     history_to_arrays,
     plot_conditioning_bars,
+    plot_main_figure_trial_method,
     plot_metric_bars,
     plot_representative_shape_functions,
     plot_solution_triplet,
@@ -94,12 +95,12 @@ def main() -> None:
     )
     plot_training_curves(
         history_a,
-        artifacts.figures_dir / "phase_a_loss_curves.png",
+        artifacts.diagnostics_dir / "phase_a_loss_curves.png",
         f"Phase A basis training ns={args.n_side}",
     )
     plot_representative_shape_functions(
         phase_a_model,
-        artifacts.figures_dir / "phase_a_shape_representatives.png",
+        artifacts.diagnostics_dir / "phase_a_shape_representatives.png",
         resolution=args.grid_resolution,
     )
 
@@ -126,18 +127,28 @@ def main() -> None:
             grid_resolution=args.grid_resolution,
         )
         method_artifacts = ensure_method_artifacts(artifacts, method)
+        plot_main_figure_trial_method(
+            x_grid=x_grid,
+            y_grid=y_grid,
+            pred=pred,
+            exact=exact,
+            history=history,
+            metrics=metrics,
+            title_prefix=METHOD_LABELS[method],
+            path=method_artifacts.figures_dir / "main_figure.png",
+        )
         plot_solution_triplet(
             x_grid,
             y_grid,
             pred,
             exact,
-            method_artifacts.figures_dir / "solution_triplet.png",
+            method_artifacts.diagnostics_dir / "solution_triplet.png",
             METHOD_LABELS[method],
         )
         if history.get("steps"):
             plot_training_curves(
                 history,
-                method_artifacts.figures_dir / "loss_curves.png",
+                method_artifacts.diagnostics_dir / "loss_curves.png",
                 METHOD_LABELS[method],
             )
         entry = {
@@ -187,8 +198,8 @@ def main() -> None:
         artifacts.root_dir / "comparison_summary.txt",
         [str(item) for item in entries],
     )
-    plot_metric_bars(entries, artifacts.figures_dir / "comparison_errors.png")
-    plot_conditioning_bars(entries, artifacts.figures_dir / "comparison_conditioning.png")
+    plot_metric_bars(entries, artifacts.figures_dir / "main_figure.png")
+    plot_conditioning_bars(entries, artifacts.figures_dir / "summary_figure.png")
 
 
 if __name__ == "__main__":

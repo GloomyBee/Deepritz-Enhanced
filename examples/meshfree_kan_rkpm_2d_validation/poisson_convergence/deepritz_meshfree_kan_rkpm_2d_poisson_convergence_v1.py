@@ -2,7 +2,6 @@ import argparse
 import sys
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -22,6 +21,8 @@ from examples.meshfree_kan_rkpm_2d_validation.common import (
     generate_square_nodes,
     parse_int_list,
     parse_float_list,
+    plot_main_figure_poisson,
+    plot_poisson_convergence_summary_2d,
     plot_solution_triplet,
     plot_training_curves,
     resolve_variant_config,
@@ -33,31 +34,6 @@ from examples.meshfree_kan_rkpm_2d_validation.common import (
     train_phase_b_poisson,
     merge_histories,
 )
-
-
-def plot_convergence(entries: list[dict], path: Path) -> None:
-    hs = np.array([item["h"] for item in entries], dtype=np.float64)
-    l2 = np.array([item["l2_error"] for item in entries], dtype=np.float64)
-    h1 = np.array([item["h1_semi_error"] for item in entries], dtype=np.float64)
-    n_sides = np.array([item["n_side"] for item in entries], dtype=np.int64)
-    order = np.argsort(hs)
-    hs = hs[order]
-    l2 = l2[order]
-    h1 = h1[order]
-    n_sides = n_sides[order]
-    fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-    ax.loglog(hs, l2, "o-", ms=8, lw=2, label="L2")
-    ax.loglog(hs, h1, "s-", ms=8, lw=2, label="H1 semi")
-    for x_value, y_value, n_side in zip(hs, l2, n_sides):
-        ax.annotate(f"n={n_side}", (x_value, y_value), textcoords="offset points", xytext=(4, 6), fontsize=9)
-    ax.set_xlabel("h")
-    ax.set_ylabel("error")
-    ax.set_title("2D Poisson errors across scales")
-    ax.grid(True, which="both", ls="--", alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(path, dpi=160, bbox_inches="tight")
-    plt.close(fig)
 
 
 def main() -> None:
@@ -165,13 +141,22 @@ def main() -> None:
             }
             history = merge_histories(history_a, history_b)
             summary_lines = [f"{key}: {value}" for key, value in metrics.items()]
+            plot_main_figure_poisson(
+                x_grid=x_grid,
+                y_grid=y_grid,
+                pred=pred,
+                exact=exact,
+                history=history,
+                path=artifacts.figures_dir / "main_figure.png",
+                phase_split_step=float(args.phase_a_steps),
+            )
             plot_training_curves(
                 history,
-                artifacts.figures_dir / "loss_curves.png",
+                artifacts.diagnostics_dir / "loss_curves.png",
                 f"Poisson ns={n_side}",
                 phase_split_step=float(args.phase_a_steps),
             )
-            plot_solution_triplet(x_grid, y_grid, pred, exact, artifacts.figures_dir / "solution_triplet.png", "Deep-RKPM-KAN")
+            plot_solution_triplet(x_grid, y_grid, pred, exact, artifacts.diagnostics_dir / "solution_triplet.png", "Deep-RKPM-KAN")
             save_run_bundle(
                 artifacts=artifacts,
                 config=vars(args),
@@ -201,7 +186,7 @@ def main() -> None:
     save_json(group_root / "convergence_summary.json", {"entries": summary_entries})
     save_summary(group_root / "convergence_summary.txt", [str(item) for item in summary_entries])
     if summary_entries:
-        plot_convergence(summary_entries, group_root / "convergence_summary.png")
+        plot_poisson_convergence_summary_2d(summary_entries, group_root / "convergence_summary.png")
 
 
 if __name__ == "__main__":
