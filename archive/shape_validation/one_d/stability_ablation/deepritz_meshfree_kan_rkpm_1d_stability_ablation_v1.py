@@ -22,7 +22,7 @@ from experiments.shape_validation.one_d.common import (
     save_summary,
     seed_everything,
 )
-from experiments.shape_validation.one_d.ablation_plotting import (
+from experiments.shape_validation.one_d.summary_plotting import (
     build_ablation_summary_lines_1d,
     build_ablation_summary_payload_1d,
     plot_ablation_summary_1d,

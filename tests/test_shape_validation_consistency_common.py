@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import unittest
 from pathlib import Path
 
@@ -22,7 +22,7 @@ from experiments.shape_validation.one_d.basis import (
     generate_interval_nodes,
     get_model_phi_stages,
 )
-from experiments.shape_validation.two_d.common import (
+from experiments.shape_validation.two_d.basis import (
     analytic_derivative_moment_matrices_2d,
     analytic_moment_matrix_2d,
     build_consistency_metrics_payload as build_consistency_metrics_payload_2d,

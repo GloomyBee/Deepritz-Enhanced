@@ -1,4 +1,4 @@
-﻿import argparse
+import argparse
 import sys
 from pathlib import Path
 
@@ -10,21 +10,29 @@ ROOT_DIR = Path(__file__).resolve().parents[4]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from experiments.shape_validation.two_d.common import (
+from experiments.shape_validation.two_d.basis import (
     MeshfreeKAN2D,
-    build_case_name,
     compute_patch_metrics,
-    ensure_run_artifacts,
+    generate_square_nodes,
     grid_points,
-    plot_heatmap,
-    plot_main_figure_patch_test,
-    plot_patch_test_summary_figure,
-    plot_training_curves,
-    resolve_variant_config,
+)
+from experiments.shape_validation.two_d.common import (
+    build_case_name,
+    ensure_run_artifacts,
     save_run_bundle,
     seed_everything,
+)
+from experiments.shape_validation.two_d.plotting import (
+    plot_heatmap,
+    plot_main_figure_patch_test,
+    plot_training_curves,
+)
+from experiments.shape_validation.two_d.summary_plotting import (
+    plot_patch_test_summary_figure,
+)
+from experiments.shape_validation.two_d.training import (
+    resolve_variant_config,
     train_phase_a,
-    generate_square_nodes,
 )
 
 

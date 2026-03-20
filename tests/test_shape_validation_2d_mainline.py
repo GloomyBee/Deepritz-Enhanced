@@ -10,12 +10,16 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from experiments.shape_validation.two_d.common import generate_square_nodes, grid_points, rkpm_shape_matrix_2d
+from experiments.shape_validation.two_d.basis import generate_square_nodes, grid_points, rkpm_shape_matrix_2d
+from experiments.shape_validation.two_d.plotting import (
+    plot_diagnostic_shape_representatives_2d,
+    plot_main_figure_shape_case_2d,
+)
 from experiments.shape_validation.two_d.shape_validation import (
     build_shape_validation_metrics_payload_2d,
     evaluate_shape_metrics_2d,
-    plot_diagnostic_shape_representatives_2d,
-    plot_main_figure_shape_case_2d,
+)
+from experiments.shape_validation.two_d.summary_plotting import (
     plot_summary_figure_shape_jitters_2d,
 )
 

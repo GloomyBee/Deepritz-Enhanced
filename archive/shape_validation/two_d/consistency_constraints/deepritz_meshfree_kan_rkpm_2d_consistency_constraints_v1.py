@@ -1,4 +1,4 @@
-﻿import argparse
+import argparse
 import sys
 from pathlib import Path
 
@@ -10,31 +10,39 @@ ROOT_DIR = Path(__file__).resolve().parents[4]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from experiments.shape_validation.two_d.common import (
+from experiments.shape_validation.two_d.basis import (
     MeshfreeKAN2D,
-    ROOT_DIR,
-    build_case_name,
     build_consistency_metrics_payload,
     build_consistency_summary_lines,
-    ensure_run_artifacts,
     evaluate_model_consistency_bundle_2d,
     evaluate_rkpm_consistency_bundle_2d,
     generate_square_nodes,
     history_to_arrays,
+)
+from experiments.shape_validation.two_d.common import (
+    ROOT_DIR,
+    build_case_name,
+    ensure_run_artifacts,
     parse_float_list,
     parse_int_list,
-    plot_consistency_summary,
-    plot_derivative_consistency_bars,
-    plot_derivative_node_residuals_2d,
-    plot_main_figure_consistency_2d,
-    plot_summary_figure_consistency_2d,
-    plot_training_curves,
-    plot_value_consistency_bars,
-    resolve_variant_config,
     save_json,
     save_run_bundle,
     save_summary,
     seed_everything,
+)
+from experiments.shape_validation.two_d.plotting import (
+    plot_derivative_consistency_bars,
+    plot_derivative_node_residuals_2d,
+    plot_main_figure_consistency_2d,
+    plot_training_curves,
+    plot_value_consistency_bars,
+)
+from experiments.shape_validation.two_d.summary_plotting import (
+    plot_consistency_summary,
+    plot_summary_figure_consistency_2d,
+)
+from experiments.shape_validation.two_d.training import (
+    resolve_variant_config,
     train_phase_a,
 )
 

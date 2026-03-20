@@ -10,28 +10,36 @@ ROOT_DIR = Path(__file__).resolve().parents[4]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from experiments.shape_validation.two_d.common import (
+from experiments.shape_validation.two_d.basis import (
     MeshfreeKAN2D,
+    generate_square_nodes,
+)
+from experiments.shape_validation.two_d.common import (
     ROOT_DIR,
     build_case_name,
     ensure_run_artifacts,
-    generate_square_nodes,
     parse_float_list,
-    plot_heatmap,
-    plot_training_curves,
-    resolve_variant_config,
     save_json,
     save_run_bundle,
     save_summary,
     seed_everything,
-    train_phase_a,
+)
+from experiments.shape_validation.two_d.plotting import (
+    plot_diagnostic_shape_representatives_2d,
+    plot_heatmap,
+    plot_main_figure_shape_case_2d,
+    plot_training_curves,
 )
 from experiments.shape_validation.two_d.shape_validation import (
     build_shape_validation_summary_lines_2d,
     evaluate_shape_validation_case_2d,
-    plot_diagnostic_shape_representatives_2d,
-    plot_main_figure_shape_case_2d,
+)
+from experiments.shape_validation.two_d.summary_plotting import (
     plot_summary_figure_shape_jitters_2d,
+)
+from experiments.shape_validation.two_d.training import (
+    resolve_variant_config,
+    train_phase_a,
 )
 
 

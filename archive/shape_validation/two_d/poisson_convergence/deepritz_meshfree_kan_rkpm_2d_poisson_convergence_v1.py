@@ -1,4 +1,4 @@
-﻿import argparse
+import argparse
 import sys
 from pathlib import Path
 
@@ -10,29 +10,37 @@ ROOT_DIR = Path(__file__).resolve().parents[4]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from experiments.shape_validation.two_d.common import (
+from experiments.shape_validation.two_d.basis import (
     MeshfreeKAN2D,
-    ROOT_DIR,
     SinusoidalPoissonProblem2D,
-    build_case_name,
     compute_patch_metrics,
-    ensure_run_artifacts,
     evaluate_solution_metrics,
     generate_square_nodes,
+)
+from experiments.shape_validation.two_d.common import (
+    ROOT_DIR,
+    build_case_name,
+    ensure_run_artifacts,
     parse_int_list,
     parse_float_list,
-    plot_main_figure_poisson,
-    plot_poisson_convergence_summary_2d,
-    plot_solution_triplet,
-    plot_training_curves,
-    resolve_variant_config,
     save_json,
     save_run_bundle,
     save_summary,
     seed_everything,
+)
+from experiments.shape_validation.two_d.plotting import (
+    plot_main_figure_poisson,
+    plot_solution_triplet,
+    plot_training_curves,
+)
+from experiments.shape_validation.two_d.summary_plotting import (
+    plot_poisson_convergence_summary_2d,
+)
+from experiments.shape_validation.two_d.training import (
+    merge_histories,
+    resolve_variant_config,
     train_phase_a,
     train_phase_b_poisson,
-    merge_histories,
 )
 
 
