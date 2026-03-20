@@ -1,1 +1,0 @@
-"""Stability ablation experiments."""
