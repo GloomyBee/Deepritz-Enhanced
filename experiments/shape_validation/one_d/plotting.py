@@ -5,6 +5,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.lines import Line2D
 
 from experiments.shape_validation.one_d.common import (
     AUX_COLORS,
@@ -320,12 +321,31 @@ def plot_main_figure_shape_case_1d(
     fig, axes = plt.subplots(2, 2, figsize=MAIN_FIGURE_SIZE)
 
     ax = axes[0, 0]
-    for index in representative_indices:
-        ax.plot(x_eval, phi_rkpm[:, index], ls=LINESTYLE_RKPM, lw=1.5, color=RKPM_COLOR, alpha=0.85)
-        ax.plot(x_eval, phi_learned[:, index], lw=1.8, ls=LINESTYLE_LEARNED, color=LEARNED_COLOR, alpha=0.85)
-    ax.scatter(nodes[representative_indices], np.zeros(len(representative_indices)), s=28, color="black", zorder=3)
+    node_colors = AUX_COLORS[: len(representative_indices)]
+    for color, index in zip(node_colors, representative_indices):
+        ax.plot(x_eval, phi_rkpm[:, index], ls=LINESTYLE_RKPM, lw=1.5, color=color, alpha=0.9)
+        ax.plot(x_eval, phi_learned[:, index], lw=1.8, ls=LINESTYLE_LEARNED, color=color, alpha=0.9)
+    ax.scatter(nodes[representative_indices], np.zeros(len(representative_indices)), s=32, c=node_colors, edgecolors="black", zorder=3)
     _style_line_axis(ax, "Representative shape functions", "x", "phi")
-    ax.text(0.02, 0.04, "solid: learned, dashed: RKPM", transform=ax.transAxes, fontsize=9)
+    method_legend = ax.legend(
+        handles=[
+            Line2D([0], [0], color="black", lw=1.8, ls=LINESTYLE_LEARNED, label="learned"),
+            Line2D([0], [0], color="black", lw=1.5, ls=LINESTYLE_RKPM, label="RKPM"),
+        ],
+        loc="upper left",
+        fontsize=8,
+        title="method",
+    )
+    ax.add_artist(method_legend)
+    ax.legend(
+        handles=[
+            Line2D([0], [0], color=color, lw=2.0, label=f"node {index}")
+            for color, index in zip(node_colors, representative_indices)
+        ],
+        loc="upper right",
+        fontsize=8,
+        title="representative",
+    )
 
     diff = phi_learned - phi_rkpm
     center_idx = int(learned_shape["center_node_index"])
@@ -351,10 +371,13 @@ def plot_main_figure_shape_case_1d(
         dtype=np.float64,
     )
     ax = axes[1, 0]
-    ax.plot(np.arange(values.size), np.maximum(values, 1.0e-16), "o-", lw=1.8, ms=6, color=LEARNED_COLOR)
-    ax.set_xticks(np.arange(values.size))
+    x_pos = np.arange(values.size, dtype=np.float64)
+    safe_values = np.maximum(values, 1.0e-16)
+    ax.bar(x_pos, safe_values, width=0.62, color=LEARNED_COLOR, alpha=0.82, edgecolor="black", linewidth=0.6)
+    ax.scatter(x_pos, safe_values, s=22, color="black", zorder=3)
+    ax.set_xticks(x_pos)
     ax.set_xticklabels(labels, rotation=16, ha="right")
-    _style_line_axis(ax, "Main indicators", "metric", "value", log_scale=True)
+    _style_line_axis(ax, "Learned shape indicators", "metric", "value", log_scale=True)
 
     _plot_history_series(axes[1, 1], history)
     _save_figure(fig, path)
