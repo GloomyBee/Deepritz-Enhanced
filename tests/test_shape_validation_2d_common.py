@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import unittest
 from pathlib import Path
 
@@ -9,7 +9,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from examples.meshfree_kan_rkpm_2d_validation.common import (
+from experiments.shape_validation.two_d.common import (
     build_case_name,
     compute_lambda_h_stats,
     generate_square_nodes,
@@ -79,3 +79,4 @@ class MeshfreeKAN2DCommonTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

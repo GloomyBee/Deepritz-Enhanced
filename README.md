@@ -1,137 +1,128 @@
 # Deepritz Enhanced
 
-基于 Deep Ritz 思想的 PDE / meshfree 研究项目，当前重点包含：
+面向论文实验开发的 Deep Ritz / meshfree 研究仓库。
 
-- Deep Ritz / PINN / VPINN 风格实验
-- RKPM / SCNI / meshfree 相关验证
-- KAN / RKPM 形函数学习与对比实验
-- 统一的训练、积分、采样、可视化模块
+当前主线已经收口为两条研究问题：
 
-## 项目特点
+- `shape_validation`：先验证 learned shape functions 的结构正确性、一致性与几何鲁棒性
+- `trial_space_value`：再评估 learned basis 作为 trial space 的数值价值
 
-- 模块化：问题、采样、积分、网络、训练、可视化相互解耦
-- 可扩展：根目录公共模块可被不同算例复用
-- 面向实验：`examples/` 和 `output/` 采用对齐组织，便于横向比较
-- 保留轨迹：算例脚本默认保留 `v1`、`v2`、`v3` 等版本演化
+仓库默认采用“研究主线优先 + 薄共享层 + 历史归档隔离”的轻量结构，不再把所有复用逻辑继续堆在根目录。
 
-## 快速开始
-
-### 1. 安装依赖
-
-```bash
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### 2. 运行算例
-
-```bash
-python examples/meshfree_kan_rkpm_1d_validation/deepritz_meshfree_kan_rkpm_1d_validation_v1.py
-```
-
-## 项目结构
+## 当前结构
 
 ```text
 Deepritz Enhanced/
-├── problems.py
-├── samplers.py
-├── integrators.py
-├── networks.py
-├── trainers.py
-├── visualizers.py
-├── examples/
+├── core/
+│   ├── io_or_artifacts.py
+│   ├── plotting.py
+│   ├── utils.py
+│   ├── numerics/
+│   ├── integrators.py
+│   ├── networks.py
+│   ├── problems.py
+│   ├── samplers.py
+│   ├── trainers.py
+│   └── visualizers.py
+├── experiments/
+│   ├── shape_validation/
+│   │   ├── one_d/
+│   │   └── two_d/
+│   └── trial_space_value/
+│       ├── one_d/
+│       └── two_d/
+├── archive/
+│   ├── baselines/
+│   └── legacy/
 ├── output/
 ├── tests/
 ├── docs/
-├── paper/
-└── legacy/
+└── paper/
 ```
 
-### 根目录模块职责
+## 目录职责
 
-- `problems.py`：PDE 问题定义、解析解、源项、边界条件
-- `samplers.py`：区域采样、边界采样、节点生成等
-- `integrators.py`：Monte Carlo、Gauss、SCNI 等积分逻辑
-- `networks.py`：MLP、KAN、RKPM 等网络或形函数相关结构
-- `trainers.py`：训练流程、损失组织、误差统计
-- `visualizers.py`：统一图像保存、训练历史和结果可视化
+### `core/`
 
-## 开发约定
+只放已经被多个实验族证明稳定复用的能力，例如：
 
-下面这些规则用于统一后续开发，默认都按这套来。
+- 通用 artifacts 落盘
+- 通用 plotting helper
+- 基础数值积分和轻量工具
+- 仍被多条主线共用的 problems / samplers / integrators / networks / trainers / visualizers
 
-### 1. 根目录放公共模块和工具类
+这里不是“大而全框架层”。强绑定某条实验叙事的逻辑，应回收到对应实验目录。
 
-- 只要逻辑具备复用价值，优先放到根目录公共模块，不要堆在单个算例脚本里。
-- 算例脚本应尽量薄，只负责参数配置、实验组织和结果保存。
+### `experiments/`
 
-### 2. 算例统一放在 `examples/`
+默认开发入口，所有活跃实验都放这里。
 
-- 所有实验入口默认放在 `examples/` 下。
-- 简单算例可以直接是单个脚本。
-- 复杂主题建议拆成目录，并在目录内放一个 `common.py` 提供共享逻辑。
-- `legacy/` 只保留历史代码和旧实验，不作为新开发主路径。
+- `experiments/shape_validation/one_d/`
+- `experiments/shape_validation/two_d/`
+- `experiments/trial_space_value/one_d/`
+- `experiments/trial_space_value/two_d/`
 
-### 3. 命名规则
+组织轴按研究问题划分，而不是按 `problem/network/trainer` 平铺。
 
-#### 基本规则
+### `archive/`
 
-- 文件名统一小写
-- 维度之间统一使用下划线 `_`
-- 名称尽量完整表达方法、网络、积分方式、问题类型、实验主题
-- 新版本默认追加 `_v1`、`_v2`、`_v3`，不直接覆盖旧版本
+历史脚本、旧方法、低活跃材料。
 
-#### 常见格式
+- `archive/baselines/`：非当前论文主线的方法对比或探索脚本
+- `archive/legacy/`：更早期的历史材料
 
-Deep Ritz / VPINN 这类需要显式积分器的脚本，推荐：
+归档内容默认不继续扩展，只保留可参考性。
+
+## 实验组织规则
+
+### 主线共享层
+
+每条主线最多保留一个主共享层，再辅以少量具名局部模块。
+
+例如：
+
+- `experiments/shape_validation/one_d/common.py`
+- `experiments/shape_validation/one_d/basis.py`
+- `experiments/shape_validation/one_d/training.py`
+- `experiments/shape_validation/one_d/plotting.py`
+
+不再继续堆“主线 common + 子目录 common + 半公共 plotting/training”的多层套娃。
+
+### 命名规则
+
+- 目录名表达研究主题
+- 文件名表达具体实验入口
+- 版本号只用于实验入口脚本，如 `_v1`
+- 公共模块禁止 `_v1/_v2`
+
+典型入口：
 
 ```text
-{framework}_{network}_{integration}_{problem}_{variant}.py
+experiments/shape_validation/one_d/uniform_nodes/deepritz_meshfree_kan_rkpm_1d_uniform_nodes_v1.py
+experiments/shape_validation/two_d/patch_test/deepritz_meshfree_kan_rkpm_2d_patch_test_v1.py
+experiments/trial_space_value/one_d/poisson_compare/deepritz_meshfree_kan_rkpm_1d_poisson_compare_v1.py
+experiments/trial_space_value/two_d/poisson_compare/deepritz_meshfree_kan_rkpm_2d_poisson_compare_v1.py
 ```
 
-PINN 这类直接计算残差的脚本，通常省略积分维度：
+## 输出约定
+
+`output/` 与实验结构镜像对齐：
 
 ```text
-{framework}_{network}_{problem}_{variant}.py
+experiments/shape_validation/one_d/<group>/<script>.py
+-> output/shape_validation/one_d/<group>/<case_name>/
+
+experiments/shape_validation/two_d/<group>/<script>.py
+-> output/shape_validation/two_d/<group>/<case_name>/
+
+experiments/trial_space_value/one_d/<group>/<script>.py
+-> output/trial_space_value/one_d/<group>/<case_name>/
+
+experiments/trial_space_value/two_d/<group>/<script>.py
+-> output/trial_space_value/two_d/<group>/<case_name>/
 ```
 
-#### 词汇约定
-
-- `framework`：`deepritz`、`pinn`、`vpinn`、`fem`
-- `network`：`mlp`、`resnet`、`kan`、`kan_serial`、`rbf`、`rkpm`、`meshfree_kan_rkpm`
-- `integration`：`mc`、`gauss`、`scni`
-- `problem` / `variant`：`poisson`、`heat`、`linear`、`gaussian`、`validation`、`patch_test`、`poisson_convergence`、`stability_ablation`、`irregular_nodes`
-
-#### 当前项目中的典型命名
-
-```text
-deepritz_meshfree_kan_rkpm_1d_validation_v1.py
-deepritz_meshfree_kan_rkpm_2d_patch_test_v1.py
-deepritz_meshfree_kan_rkpm_2d_poisson_convergence_v1.py
-deepritz_meshfree_kan_rkpm_2d_stability_ablation_v1.py
-deepritz_meshfree_kan_rkpm_2d_irregular_nodes_v1.py
-```
-
-### 4. `output/` 与 `examples/` 对齐
-
-- 输出目录必须和算例目录结构对齐，避免实验结果混放。
-
-#### 1D 单脚本类算例
-
-```text
-examples/meshfree_kan_rkpm_1d_validation/<script>.py
--> output/meshfree_kan_rkpm_1d_validation/<script>_output/
-```
-
-#### 2D 分组实验类算例
-
-```text
-examples/meshfree_kan_rkpm_2d_validation/<group>/<script>.py
--> output/meshfree_kan_rkpm_2d_validation/<group>/<case_name>/
-```
-
-#### 每次运行建议至少保存
+主线实验仍保留既有产物协议：
 
 - `config.json`
 - `metrics.json`
@@ -139,107 +130,55 @@ examples/meshfree_kan_rkpm_2d_validation/<group>/<script>.py
 - `summary.txt`
 - `figures/`
 
-### 5. 脚本职责边界
+trial-space 的比较实验会额外保留：
 
-- 算例脚本负责参数、调度、落盘
-- 公共算法和共享工具放公共模块
-- 同一主题的后续实验优先沿用既有目录和命名体系，保证可搜索、可对比、可批量统计
+- `comparison_metrics.json`
+- `comparison_summary.txt`
+- `methods/<method>/...`
 
-## 当前算例组织
+## 快速开始
 
-### 1D 验证
+### 安装依赖
 
-目录：
-
-```text
-examples/meshfree_kan_rkpm_1d_validation/
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-特点：
+### 运行主线 smoke 示例
 
-- 同一主题下保留多个版本脚本，如 `v1` 到 `v5`
-- 输出目录与脚本名直接对应
-
-### 2D 验证
-
-目录：
-
-```text
-examples/meshfree_kan_rkpm_2d_validation/
+```bash
+python experiments/shape_validation/one_d/uniform_nodes/deepritz_meshfree_kan_rkpm_1d_uniform_nodes_v1.py --steps 1 --output-tag smoke
+python experiments/shape_validation/two_d/patch_test/deepritz_meshfree_kan_rkpm_2d_patch_test_v1.py --phase-a-steps 1 --phase-b-steps 1 --output-tag smoke
+python experiments/trial_space_value/one_d/poisson_compare/deepritz_meshfree_kan_rkpm_1d_poisson_compare_v1.py --steps 1 --output-tag smoke
 ```
-
-特点：
-
-- 按实验主题拆分子目录
-- 共享逻辑集中在 `common.py`
-- 当前主题包括：
-  - `patch_test`
-  - `poisson_convergence`
-  - `stability_ablation`
-  - `irregular_nodes`
 
 ## 测试
 
-当前测试主要放在：
+优先用仓库虚拟环境执行：
 
-```text
-tests/
+```bash
+.venv\Scripts\python.exe -m unittest discover tests
 ```
 
-例如：
+当前测试重点不是追求高覆盖率，而是保证：
 
-- `tests/test_meshfree_kan_rkpm_2d_common.py`
+- 新 `core/` 边界稳定
+- 主线实验导入路径不回归
+- 输出产物协议不回归
 
-新增公共逻辑时，优先补对应测试，减少实验回归风险。
+## 相关文档
 
-## 代码示例
-
-```python
-import torch
-
-from problems import PoissonDisk
-from networks import RitzNet
-from integrators import MonteCarloIntegrator
-from trainers import DeepRitzTrainer
-
-problem = PoissonDisk(radius=1.0)
-model = RitzNet(input_dim=2, hidden_dims=[100, 100, 100], output_dim=1)
-integrator = MonteCarloIntegrator(n_points=8000, domain_bounds=(-1, 1, -1, 1))
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-trainer = DeepRitzTrainer(
-    model=model,
-    problem=problem,
-    integrator=integrator,
-    optimizer=optimizer,
-    device="cuda",
-    beta_bc=1000.0,
-)
-
-history = trainer.train(n_steps=5000)
-```
-
-## 依赖环境
-
-- Python >= 3.8
-- PyTorch >= 1.10.0
-- NumPy >= 1.21.0
-- SciPy >= 1.9.0
-- Matplotlib >= 3.6.0
-
-## 文档
-
-- `CLAUDE.md`：历史协作说明
-- `examples/README.md`：示例脚本说明
-- `docs/`：研究记录、架构说明、文献整理
-- `paper/`：论文和汇报相关材料
+- `experiments/shape_validation/two_d/README.md`
+- `experiments/trial_space_value/one_d/README.md`
+- `experiments/trial_space_value/two_d/README.md`
+- `archive/baselines/README.md`
+- `phase1_shape_function_validation_plan.md`
+- `paper/`
 
 ## 参考文献
 
 1. E, W., and Yu, B. The deep Ritz method: a deep learning-based numerical algorithm for solving variational problems.
 2. Chen, J. S., Wu, C. T., Yoon, S., and You, Y. A stabilized conforming nodal integration for Galerkin mesh-free methods.
 3. Liu, W. K., Jun, S., and Zhang, Y. F. Reproducing kernel particle methods.
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request。

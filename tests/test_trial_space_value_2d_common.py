@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import unittest
 from pathlib import Path
 
@@ -9,7 +9,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from examples.meshfree_kan_rkpm_2d_trial_space_value.common import (
+from experiments.trial_space_value.two_d.common import (
     assemble_poisson_penalty_system,
     compose_frozen_w_loss,
     compute_matrix_stats,
@@ -99,3 +99,4 @@ class TrialSpaceCommonTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

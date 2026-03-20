@@ -3,21 +3,26 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+import torch
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from examples.meshfree_kan_rkpm_1d_validation.common import (
+from experiments.shape_validation.one_d.basis import (
+    MeshfreeKAN1D,
     analytic_derivative_moment_matrices_1d,
     analytic_moment_matrix_1d,
     build_consistency_metrics_payload as build_consistency_metrics_payload_1d,
+    compute_model_shape_and_gradients_1d,
+    evaluate_model_consistency_bundle_1d,
     evaluate_rkpm_consistency_bundle_1d,
     gauss_legendre_interval_1d,
     generate_interval_nodes,
+    get_model_phi_stages,
 )
-from examples.meshfree_kan_rkpm_2d_validation.common import (
+from experiments.shape_validation.two_d.common import (
     analytic_derivative_moment_matrices_2d,
     analytic_moment_matrix_2d,
     build_consistency_metrics_payload as build_consistency_metrics_payload_2d,
@@ -29,6 +34,32 @@ from examples.meshfree_kan_rkpm_2d_validation.common import (
 
 
 class ConsistencyCommonTests(unittest.TestCase):
+    def test_compute_shape_function_stages_and_orphan_fallback_are_finite(self):
+        nodes, h = generate_interval_nodes(n_nodes=7)
+        model = MeshfreeKAN1D(
+            nodes=torch.tensor(nodes, dtype=torch.float64),
+            support_radius=2.0 * h,
+            hidden_dim=8,
+            use_softplus=True,
+        )
+        x = torch.tensor([[0.25], [1.75]], dtype=torch.float64)
+        stages = get_model_phi_stages(model, x)
+
+        self.assertEqual(stages["pre_window"].shape, (2, 7))
+        self.assertEqual(stages["windowed"].shape, (2, 7))
+        self.assertEqual(stages["normalized"].shape, (2, 7))
+
+        windowed_np = stages["windowed"].detach().cpu().numpy()
+        normalized_np = stages["normalized"].detach().cpu().numpy()
+        np.testing.assert_allclose(
+            normalized_np[0],
+            windowed_np[0] / np.sum(windowed_np[0]),
+            atol=1.0e-10,
+            rtol=1.0e-10,
+        )
+        self.assertTrue(np.all(np.isfinite(normalized_np[1])))
+        self.assertAlmostEqual(float(np.sum(normalized_np[1])), 1.0, places=10)
+
     def test_interval_gauss_weights_sum_to_length(self):
         _, weights = gauss_legendre_interval_1d(order=4)
         self.assertAlmostEqual(float(np.sum(weights)), 1.0)
@@ -107,6 +138,31 @@ class ConsistencyCommonTests(unittest.TestCase):
         self.assertTrue(np.isfinite(bundle["metrics"]["moment_matrix_residual_fro"]))
         self.assertTrue(np.isfinite(bundle["metrics"]["derivative_boundary_residual_max"]))
 
+    def test_model_consistency_windowed_sum_matches_windowed_stage(self):
+        nodes, h = generate_interval_nodes(n_nodes=7)
+        model = MeshfreeKAN1D(
+            nodes=torch.tensor(nodes, dtype=torch.float64),
+            support_radius=2.0 * h,
+            hidden_dim=8,
+            use_softplus=True,
+        )
+        bundle = evaluate_model_consistency_bundle_1d(
+            model=model,
+            quadrature_order=6,
+            device="cpu",
+        )
+        explicit = compute_model_shape_and_gradients_1d(
+            model=model,
+            points=bundle["arrays"]["domain_points"].reshape(-1),
+            device="cpu",
+        )
+        np.testing.assert_allclose(
+            bundle["arrays"]["windowed_sum"],
+            np.sum(explicit["windowed"], axis=1),
+            atol=1.0e-10,
+            rtol=1.0e-10,
+        )
+
     def test_rkpm_consistency_bundle_2d_shapes_and_finite_metrics(self):
         nodes, h = generate_square_nodes(n_side=5)
         bundle = evaluate_rkpm_consistency_bundle_2d(
@@ -142,3 +198,4 @@ class ConsistencyCommonTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
