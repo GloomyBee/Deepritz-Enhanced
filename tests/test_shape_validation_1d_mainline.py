@@ -12,7 +12,6 @@ ROOT_DIR = Path(__file__).resolve().parents[0]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from experiments.shape_validation.one_d.ablation_plotting import plot_ablation_summary_1d
 from experiments.shape_validation.one_d.common import resolve_repo_root
 from experiments.trial_space_value.one_d.poisson_fixed_basis import (
     plot_main_figure_poisson_1d,
@@ -117,6 +116,15 @@ class MainlineShapeFigureTests(unittest.TestCase):
         )
         self.assertEqual(resolve_repo_root(script_path), repo_root)
 
+    def test_only_uniform_and_nonuniform_remain_active_in_one_d(self):
+        repo_root = ROOT_DIR.parents[0]
+        active_uniform = repo_root / 'experiments' / 'shape_validation' / 'one_d' / 'uniform_nodes' / 'deepritz_meshfree_kan_rkpm_1d_uniform_nodes_v1.py'
+        active_nonuniform = repo_root / 'experiments' / 'shape_validation' / 'one_d' / 'nonuniform_nodes' / 'deepritz_meshfree_kan_rkpm_1d_nonuniform_nodes_v1.py'
+        retired_stability = repo_root / 'experiments' / 'shape_validation' / 'one_d' / 'stability_ablation'
+        self.assertTrue(active_uniform.is_file())
+        self.assertTrue(active_nonuniform.is_file())
+        self.assertFalse(retired_stability.exists())
+
     def test_mainline_shape_figures_write_files(self):
         root = self._prepare_dir("mainline_shape_outputs")
         x_eval = np.linspace(0.0, 1.0, 201, dtype=np.float64)
@@ -190,17 +198,9 @@ class MainlineShapeFigureTests(unittest.TestCase):
             ],
             root / "summary_figure.png",
         )
-        plot_ablation_summary_1d(
-            [
-                {"variant": "raw_pu", "metrics": payload},
-                {"variant": "teacher_distill", "metrics": payload},
-            ],
-            root / "ablation_summary.png",
-        )
         self.assertTrue((root / "main_figure.png").is_file())
         self.assertTrue((root / "shape_subset_overlay.png").is_file())
         self.assertTrue((root / "summary_figure.png").is_file())
-        self.assertTrue((root / "ablation_summary.png").is_file())
 
     def test_poisson_main_figure_writes_file(self):
         root = self._prepare_dir("mainline_poisson_outputs")

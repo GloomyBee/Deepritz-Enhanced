@@ -99,7 +99,7 @@ Deepritz Enhanced/
 
 ```text
 experiments/shape_validation/one_d/uniform_nodes/deepritz_meshfree_kan_rkpm_1d_uniform_nodes_v1.py
-experiments/shape_validation/two_d/patch_test/deepritz_meshfree_kan_rkpm_2d_patch_test_v1.py
+experiments/shape_validation/two_d/uniform_nodes/deepritz_meshfree_kan_rkpm_2d_uniform_nodes_v1.py
 experiments/trial_space_value/one_d/poisson_compare/deepritz_meshfree_kan_rkpm_1d_poisson_compare_v1.py
 experiments/trial_space_value/two_d/poisson_compare/deepritz_meshfree_kan_rkpm_2d_poisson_compare_v1.py
 ```
@@ -150,7 +150,7 @@ pip install -r requirements.txt
 
 ```bash
 python experiments/shape_validation/one_d/uniform_nodes/deepritz_meshfree_kan_rkpm_1d_uniform_nodes_v1.py --steps 1 --output-tag smoke
-python experiments/shape_validation/two_d/patch_test/deepritz_meshfree_kan_rkpm_2d_patch_test_v1.py --phase-a-steps 1 --phase-b-steps 1 --output-tag smoke
+python experiments/shape_validation/two_d/uniform_nodes/deepritz_meshfree_kan_rkpm_2d_uniform_nodes_v1.py --phase-a-steps 1 --output-tag smoke
 python experiments/trial_space_value/one_d/poisson_compare/deepritz_meshfree_kan_rkpm_1d_poisson_compare_v1.py --steps 1 --output-tag smoke
 ```
 

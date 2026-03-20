@@ -45,6 +45,7 @@ def main() -> None:
 
     seed_everything(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print("current device:", device)
     variant_cfg = resolve_variant_config(args.variant)
     nodes_np, h = generate_square_nodes(n_side=args.n_side)
     support_radius = args.kappa * h
