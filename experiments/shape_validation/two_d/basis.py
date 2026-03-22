@@ -9,6 +9,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from core.splines import evaluate_open_uniform_bspline_basis
+
 from core.utils import ensure_repo_root_on_path
 
 
@@ -260,35 +262,33 @@ class KANSpline2D(nn.Module):
         hidden_dim: int = 16,
         num_basis: int = 7,
         grid_range: tuple[float, float] = (-1.5, 1.5),
+        degree: int = 3,
     ):
         super().__init__()
-        grid_min, grid_max = grid_range
-        grid = torch.linspace(grid_min, grid_max, num_basis)
-        h = (grid_max - grid_min) / (num_basis - 1)
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.num_basis = num_basis
-        self.register_buffer("grid", grid)
-        self.register_buffer("h", torch.tensor(h))
+        self.grid_range = grid_range
+        self.degree = degree
         self.layer1 = nn.ModuleList(
             [nn.Linear(num_basis, hidden_dim, bias=False) for _ in range(input_dim)]
         )
         self.layer2 = nn.Linear(hidden_dim * num_basis, 1, bias=False)
 
-    def _hat_basis(self, x: torch.Tensor) -> torch.Tensor:
-        if x.dim() == 1:
-            x = x.unsqueeze(1)
-        batch_size, dim = x.shape
-        grid = self.grid.view(1, 1, self.num_basis)
-        x_exp = x.view(batch_size, dim, 1)
-        return torch.relu(1.0 - torch.abs(x_exp - grid) / self.h)
+    def _basis_response(self, x: torch.Tensor) -> torch.Tensor:
+        return evaluate_open_uniform_bspline_basis(
+            x,
+            num_basis=self.num_basis,
+            degree=self.degree,
+            grid_range=self.grid_range,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         hidden_sum = 0.0
         for index, layer in enumerate(self.layer1):
-            basis = self._hat_basis(x[:, index : index + 1]).squeeze(1)
+            basis = self._basis_response(x[:, index : index + 1]).squeeze(1)
             hidden_sum = hidden_sum + layer(basis)
-        basis_hidden = self._hat_basis(hidden_sum)
+        basis_hidden = self._basis_response(hidden_sum)
         return self.layer2(basis_hidden.reshape(x.shape[0], -1))
 
 

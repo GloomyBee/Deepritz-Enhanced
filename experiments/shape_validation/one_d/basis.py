@@ -6,6 +6,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from core.splines import evaluate_open_uniform_bspline_basis
+
 
 def generate_interval_nodes(n_nodes: int) -> tuple[np.ndarray, float]:
     nodes = np.linspace(0.0, 1.0, n_nodes, dtype=np.float64)
@@ -75,30 +77,28 @@ class KANSpline1D(nn.Module):
         hidden_dim: int = 16,
         num_basis: int = 7,
         grid_range: tuple[float, float] = (-1.5, 1.5),
+        degree: int = 3,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_basis = num_basis
-        gmin, gmax = grid_range
-        grid = torch.linspace(gmin, gmax, num_basis)
-        h = (gmax - gmin) / (num_basis - 1)
-        self.register_buffer("grid", grid)
-        self.register_buffer("h", torch.tensor(h))
+        self.grid_range = grid_range
+        self.degree = degree
         self.layer1 = nn.Linear(num_basis, hidden_dim, bias=False)
         self.layer2 = nn.Linear(hidden_dim * num_basis, 1, bias=False)
 
-    def _hat_basis(self, x: torch.Tensor) -> torch.Tensor:
-        if x.dim() == 1:
-            x = x.unsqueeze(1)
-        batch_size, width = x.shape
-        grid = self.grid.view(1, 1, self.num_basis)
-        x_expanded = x.view(batch_size, width, 1)
-        return torch.relu(1.0 - torch.abs(x_expanded - grid) / self.h)
+    def _basis_response(self, x: torch.Tensor) -> torch.Tensor:
+        return evaluate_open_uniform_bspline_basis(
+            x,
+            num_basis=self.num_basis,
+            degree=self.degree,
+            grid_range=self.grid_range,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        basis_1 = self._hat_basis(x).squeeze(1)
+        basis_1 = self._basis_response(x).squeeze(1)
         hidden = self.layer1(basis_1)
-        basis_2 = self._hat_basis(hidden)
+        basis_2 = self._basis_response(hidden)
         return self.layer2(basis_2.reshape(x.shape[0], -1))
 
 
