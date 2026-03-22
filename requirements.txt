@@ -1,5 +1,11 @@
-torch>=1.10.0
-numpy>=1.21.0
-scipy>=1.9.0
-matplotlib>=3.6.0
-pyyaml>=5.4.0
+# Verified development environment:
+# Python 3.11
+# torch 2.10.x
+# numpy 2.4.x
+# scipy 1.17.x
+# matplotlib 3.10.x
+
+torch>=2.4,<2.11
+numpy>=2.1,<2.5
+scipy>=1.14,<1.18
+matplotlib>=3.9,<3.11
