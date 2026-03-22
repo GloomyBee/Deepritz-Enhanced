@@ -12,11 +12,9 @@ ROOT_DIR = Path(__file__).resolve().parents[0]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from experiments.shape_validation.one_d.common import resolve_repo_root
-from experiments.trial_space_value.one_d.poisson_fixed_basis import (
-    plot_main_figure_poisson_1d,
-    solve_fixed_basis_poisson_1d,
-)
+from experiments.trial_space_value.one_d.common import resolve_repo_root
+from experiments.trial_space_value.one_d.plotting import plot_main_figure_poisson_1d
+from experiments.trial_space_value.one_d.trial_space import build_poisson_summary_lines_1d, solve_fixed_basis_poisson_1d
 from experiments.shape_validation.one_d.basis import (
     MeshfreeKAN1D,
     build_shape_validation_metrics_payload_1d,
@@ -224,6 +222,28 @@ class MainlineShapeFigureTests(unittest.TestCase):
             path=root / "main_figure.png",
         )
         self.assertTrue((root / "main_figure.png").is_file())
+
+    def test_poisson_summary_reads_shape_only_basis_quality_payload(self):
+        summary_lines = build_poisson_summary_lines_1d(
+            {
+                "case": {"seed": 42, "method": "fixed_basis"},
+                "method": "fixed_basis",
+                "basis_quality": {
+                    "shape_relative_l2": 1.0e-2,
+                    "linear_reproduction_rmse": 5.0e-3,
+                },
+                "trial_space": {
+                    "l2_error": 2.0e-2,
+                    "h1_semi_error": 3.0e-2,
+                    "boundary_error": 1.0e-6,
+                    "bc_residual_norm": 1.0e-12,
+                    "solver_residual_norm": 1.0e-9,
+                    "condition_number": 1.0e3,
+                },
+            }
+        )
+        self.assertTrue(any("basis_shape_relative_l2" in line for line in summary_lines))
+        self.assertTrue(any("basis_linear_reproduction_rmse" in line for line in summary_lines))
 
     def test_kkt_poisson_solver_enforces_boundary_constraints(self):
         nodes, h = generate_interval_nodes(n_nodes=9)

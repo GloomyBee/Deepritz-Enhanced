@@ -9,19 +9,33 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from experiments.trial_space_value.two_d.common import (
-    assemble_poisson_penalty_system,
-    compose_frozen_w_loss,
-    compute_matrix_stats,
+from experiments.trial_space_value.two_d.basis import (
     gauss_legendre_1d,
-    solve_linear_system,
-    stabilize_symmetric_system,
     square_boundary_quadrature,
     square_domain_quadrature,
+)
+from experiments.trial_space_value.two_d.common import build_case_name
+from experiments.trial_space_value.two_d.training import compose_frozen_w_loss, resolve_variant_config
+from experiments.trial_space_value.two_d.trial_space import (
+    assemble_poisson_penalty_system,
+    compute_matrix_stats,
+    solve_linear_system,
+    stabilize_symmetric_system,
 )
 
 
 class TrialSpaceCommonTests(unittest.TestCase):
+    def test_build_case_name_includes_method_token(self):
+        case_name = build_case_name(
+            variant="softplus_raw_pu_bd",
+            method="classical",
+            n_side=15,
+            kappa=2.5,
+            seed=42,
+            tag="pilot",
+        )
+        self.assertEqual(case_name, "variant_softplus_raw_pu_bd_method_classical_ns15_k2p5_seed42_pilot")
+
     def test_gauss_legendre_interval_weights_sum_to_one(self):
         _, weights = gauss_legendre_1d(order=4)
         self.assertAlmostEqual(float(np.sum(weights)), 1.0)
@@ -96,7 +110,11 @@ class TrialSpaceCommonTests(unittest.TestCase):
         self.assertLess(float(solver_metrics["solver_residual"]), 1e-8)
         self.assertAlmostEqual(float(solver_metrics["solver_stabilized_residual"]), 0.0, places=12)
 
+    def test_no_fallback_variant_config(self):
+        config = resolve_variant_config("no_softplus_raw_pu_bd_no_fallback")
+        self.assertFalse(config["enable_fallback"])
+        self.assertFalse(config["use_softplus"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

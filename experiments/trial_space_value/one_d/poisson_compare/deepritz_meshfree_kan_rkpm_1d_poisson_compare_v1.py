@@ -12,31 +12,22 @@ if str(BOOTSTRAP_ROOT) not in sys.path:
 
 import torch
 
-from experiments.shape_validation.one_d.common import (
+from experiments.trial_space_value.one_d.basis import evaluate_shape_validation_case_1d, generate_interval_nodes, history_to_arrays
+from experiments.trial_space_value.one_d.common import (
     build_case_name,
+    build_metrics_payload,
+    ensure_trial_space_artifacts_1d,
     resolve_repo_root,
     save_run_bundle,
     seed_everything,
 )
-from experiments.trial_space_value.one_d.common import ensure_trial_space_artifacts_1d
-from experiments.trial_space_value.one_d.poisson_fixed_basis import (
-    build_poisson_summary_lines_1d,
-    plot_main_figure_poisson_1d,
-    solve_fixed_basis_poisson_1d,
-)
-from experiments.shape_validation.one_d.basis import (
-    evaluate_shape_validation_case_1d,
-    generate_interval_nodes,
-    history_to_arrays,
-)
-from experiments.shape_validation.one_d.plotting import (
+from experiments.trial_space_value.one_d.plotting import (
     plot_diagnostic_shape_consistency_1d,
     plot_diagnostic_shape_overlay_1d,
+    plot_main_figure_poisson_1d,
 )
-from experiments.shape_validation.one_d.training import (
-    build_shape_model_1d,
-    train_shape_model_1d,
-)
+from experiments.trial_space_value.one_d.training import build_shape_model_1d, train_shape_model_1d
+from experiments.trial_space_value.one_d.trial_space import build_poisson_summary_lines_1d, solve_fixed_basis_poisson_1d
 
 
 def main() -> None:
@@ -61,10 +52,11 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     nodes, h = generate_interval_nodes(args.n_nodes)
     support_radius = args.support_factor * h
-    tag = "_".join(item for item in ["poisson_fixed_basis", args.variant, args.output_tag.strip()] if item)
+    tag = "_".join(item for item in [args.variant, args.output_tag.strip()] if item)
     case_name = build_case_name(
         n_nodes=args.n_nodes,
         support_factor=args.support_factor,
+        method="fixed_basis",
         seed=args.seed,
         tag=tag,
     )
@@ -112,20 +104,23 @@ def main() -> None:
         eval_resolution=args.eval_resolution,
         device=device,
     )
-    metrics = {
-        "case": {
-            "dimension": 1,
-            "group": "poisson_compare",
-            "variant": args.variant,
-            "n_nodes": args.n_nodes,
-            "support_factor": args.support_factor,
-            "support_radius": support_radius,
-            "quadrature_order": args.quadrature_order,
-            "seed": args.seed,
-        },
-        "basis_quality": shape_result["metrics"]["learned"],
-        "poisson": poisson_result["metrics"],
+    case_payload = {
+        "dimension": 1,
+        "group": "poisson_compare",
+        "variant": args.variant,
+        "method": "fixed_basis",
+        "n_nodes": args.n_nodes,
+        "support_factor": args.support_factor,
+        "support_radius": support_radius,
+        "quadrature_order": args.quadrature_order,
+        "seed": args.seed,
     }
+    metrics = build_metrics_payload(
+        case=case_payload,
+        basis_quality=shape_result["metrics"]["learned"]["shape"],
+        trial_space=poisson_result["metrics"],
+        method="fixed_basis",
+    )
     arrays = {
         "shape_x_eval": shape_result["arrays"]["x_eval"],
         "shape_nodes": shape_result["arrays"]["nodes"],
@@ -134,10 +129,11 @@ def main() -> None:
     }
     arrays.update(poisson_result["arrays"])
     arrays.update(history_to_arrays(history))
-    summary_lines = build_poisson_summary_lines_1d(metrics["case"], metrics["poisson"])
+    summary_lines = build_poisson_summary_lines_1d(metrics)
     config = {
         "group": "poisson_compare",
         "case_name": case_name,
+        "method": "fixed_basis",
         "variant": args.variant,
         "n_nodes": args.n_nodes,
         "support_factor": args.support_factor,
