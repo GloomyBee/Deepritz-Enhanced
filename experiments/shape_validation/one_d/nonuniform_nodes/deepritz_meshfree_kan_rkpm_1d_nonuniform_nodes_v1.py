@@ -12,17 +12,16 @@ if str(BOOTSTRAP_ROOT) not in sys.path:
 
 import torch
 
+from experiments.shape_validation.one_d.config import (
+    build_nonuniform_shape_validation_1d_sweep_config,
+)
 from experiments.shape_validation.one_d.common import (
     ROOT_DIR as COMMON_ROOT,
-    build_case_name,
     ensure_run_artifacts,
-    parse_int_list,
-    resolve_repo_root,
     save_json,
     save_run_bundle,
     save_summary,
     seed_everything,
-    safe_token,
 )
 from experiments.shape_validation.one_d.basis import (
     build_shape_validation_summary_lines_1d,
@@ -60,100 +59,63 @@ def main() -> None:
     parser.add_argument("--output-tag", type=str, default="")
     args = parser.parse_args()
 
-    seeds = parse_int_list(args.seeds)
-    if args.representative_seed not in seeds:
-        raise ValueError("representative seed must be included in --seeds")
-
-    _ = resolve_repo_root(THIS_FILE)
+    cfg = build_nonuniform_shape_validation_1d_sweep_config(args)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     entries: list[dict[str, object]] = []
     group_root = COMMON_ROOT / "output" / "shape_validation" / "one_d" / "nonuniform_nodes"
     group_root.mkdir(parents=True, exist_ok=True)
 
-    for seed in seeds:
+    for seed in cfg.seeds:
+        run_cfg = cfg.case_config_for_seed(seed)
         seed_everything(seed)
         nodes, h = generate_nonuniform_interval_nodes(
-            n_nodes=args.n_nodes,
-            jitter_factor=args.jitter_factor,
+            n_nodes=run_cfg.n_nodes,
+            jitter_factor=run_cfg.jitter_factor,
             seed=seed,
         )
-        support_radius = args.support_factor * h
-        tag = "_".join(
-            item
-            for item in [
-                "nonuniform",
-                f"jf{safe_token(args.jitter_factor)}",
-                args.variant,
-                args.output_tag.strip(),
-            ]
-            if item
-        )
-        case_name = build_case_name(
-            n_nodes=args.n_nodes,
-            support_factor=args.support_factor,
-            seed=seed,
-            tag=tag,
-        )
+        support_radius = run_cfg.support_radius(h)
+        case_name = run_cfg.case_name(seed=seed)
         artifacts = ensure_run_artifacts("nonuniform_nodes", case_name)
         model = build_shape_model_1d(
             nodes=nodes,
             support_radius=support_radius,
-            hidden_dim=args.hidden_dim,
-            variant_name=args.variant,
+            hidden_dim=run_cfg.hidden_dim,
+            variant_name=run_cfg.variant,
             device=device,
         )
         history = train_shape_model_1d(
             model=model,
             nodes=model.nodes,
-            variant_name=args.variant,
+            variant_name=run_cfg.variant,
             device=device,
-            steps=args.steps,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            log_interval=args.log_interval,
+            steps=run_cfg.steps,
+            batch_size=run_cfg.batch_size,
+            lr=run_cfg.lr,
+            log_interval=run_cfg.log_interval,
         )
-        case_meta = {
-            "dimension": 1,
-            "layout": "nonuniform",
-            "variant": args.variant,
-            "n_nodes": args.n_nodes,
-            "h": h,
-            "support_factor": args.support_factor,
-            "support_radius": support_radius,
-            "quadrature_order": args.quadrature_order,
-            "seed": seed,
-            "jitter_factor": args.jitter_factor,
-        }
+        case_meta = run_cfg.build_case_meta(
+            h=h,
+            support_radius=support_radius,
+            seed=seed,
+        )
         result = evaluate_shape_validation_case_1d(
             model=model,
             nodes=nodes,
             support_radius=support_radius,
-            n_eval=args.n_eval,
-            quadrature_order=args.quadrature_order,
+            n_eval=run_cfg.n_eval,
+            quadrature_order=run_cfg.quadrature_order,
             device=device,
             case_meta=case_meta,
         )
         arrays = dict(result["arrays"])
         arrays.update(history_to_arrays(history))
         summary_lines = build_shape_validation_summary_lines_1d(result["metrics"])
-        config = {
-            "group": "nonuniform_nodes",
-            "case_name": case_name,
-            "n_nodes": args.n_nodes,
-            "support_factor": args.support_factor,
-            "support_radius": support_radius,
-            "jitter_factor": args.jitter_factor,
-            "variant": args.variant,
-            "steps": args.steps,
-            "batch_size": args.batch_size,
-            "lr": args.lr,
-            "hidden_dim": args.hidden_dim,
-            "n_eval": args.n_eval,
-            "quadrature_order": args.quadrature_order,
-            "seed": seed,
-            "output_tag": args.output_tag,
-            "device": device,
-        }
+        config = run_cfg.to_config_payload(
+            device=device,
+            case_name=case_name,
+            support_radius=support_radius,
+            seed=seed,
+        )
         save_run_bundle(
             artifacts=artifacts,
             config=config,
@@ -190,7 +152,7 @@ def main() -> None:
                 "case_name": case_name,
                 "metrics": result["metrics"],
                 "summary_lines": summary_lines,
-                "is_representative": seed == args.representative_seed,
+                "is_representative": seed == cfg.representative_seed,
             }
         )
 
@@ -199,24 +161,24 @@ def main() -> None:
     save_json(
         group_root / "nonuniform_summary.json",
         {
-            "variant": args.variant,
-            "n_nodes": args.n_nodes,
-            "support_factor": args.support_factor,
-            "jitter_factor": args.jitter_factor,
-            "representative_seed": args.representative_seed,
-            "seeds": seeds,
+            "variant": cfg.run_config.variant,
+            "n_nodes": cfg.run_config.n_nodes,
+            "support_factor": cfg.run_config.support_factor,
+            "jitter_factor": cfg.run_config.jitter_factor,
+            "representative_seed": cfg.representative_seed,
+            "seeds": list(cfg.seeds),
             "entries": entries,
         },
     )
     save_summary(
         group_root / "nonuniform_summary.txt",
         [
-            f"variant: {args.variant}",
-            f"n_nodes: {args.n_nodes}",
-            f"support_factor: {args.support_factor}",
-            f"jitter_factor: {args.jitter_factor}",
-            f"representative_seed: {args.representative_seed}",
-            "seeds: " + ",".join(str(seed) for seed in seeds),
+            f"variant: {cfg.run_config.variant}",
+            f"n_nodes: {cfg.run_config.n_nodes}",
+            f"support_factor: {cfg.run_config.support_factor}",
+            f"jitter_factor: {cfg.run_config.jitter_factor}",
+            f"representative_seed: {cfg.representative_seed}",
+            "seeds: " + ",".join(str(seed) for seed in cfg.seeds),
         ]
         + [
             f"seed={item['seed']} shape_relative_l2={item['metrics']['learned']['shape']['shape_relative_l2']:.6e} "

@@ -5,17 +5,19 @@ from pathlib import Path
 import numpy as np
 import torch
 
+BOOTSTRAP_ROOT = Path(__file__).resolve().parents[4]
+if str(BOOTSTRAP_ROOT) not in sys.path:
+    sys.path.append(str(BOOTSTRAP_ROOT))
 
-ROOT_DIR = Path(__file__).resolve().parents[4]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.append(str(ROOT_DIR))
-
+from experiments.shape_validation.two_d.config import (
+    build_uniform_shape_validation_2d_config,
+    get_shape_training_variant_2d,
+)
 from experiments.shape_validation.two_d.basis import (
     MeshfreeKAN2D,
     generate_square_nodes,
 )
 from experiments.shape_validation.two_d.common import (
-    build_case_name,
     ensure_run_artifacts,
     save_run_bundle,
     seed_everything,
@@ -31,7 +33,6 @@ from experiments.shape_validation.two_d.shape_validation import (
     evaluate_shape_validation_case_2d,
 )
 from experiments.shape_validation.two_d.training import (
-    resolve_variant_config,
     train_phase_a,
 )
 
@@ -52,55 +53,43 @@ def main() -> None:
     parser.add_argument("--output-tag", type=str, default="")
     args = parser.parse_args()
 
-    seed_everything(args.seed)
+    cfg = build_uniform_shape_validation_2d_config(args)
+    seed_everything(cfg.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    variant_cfg = resolve_variant_config(args.variant)
-    nodes_np, h = generate_square_nodes(n_side=args.n_side)
-    support_radius = args.kappa * h
-    case_name = build_case_name(
-        variant=args.variant,
-        n_side=args.n_side,
-        kappa=args.kappa,
-        seed=args.seed,
-        tag=args.output_tag,
-    )
+    variant_cfg = get_shape_training_variant_2d(cfg.variant)
+    nodes_np, h = generate_square_nodes(n_side=cfg.n_side)
+    support_radius = cfg.support_radius(h)
+    case_name = cfg.case_name()
     artifacts = ensure_run_artifacts("uniform_nodes", case_name)
     nodes_t = torch.tensor(nodes_np, device=device)
     model = MeshfreeKAN2D(
         nodes=nodes_t,
         support_radius=support_radius,
-        hidden_dim=args.hidden_dim,
-        use_softplus=variant_cfg["use_softplus"],
-        enable_fallback=variant_cfg["enable_fallback"],
+        hidden_dim=cfg.hidden_dim,
+        use_softplus=variant_cfg.use_softplus,
+        enable_fallback=variant_cfg.enable_fallback,
     ).to(device)
     history = train_phase_a(
         model=model,
         nodes=nodes_t,
         device=device,
-        variant=args.variant,
-        steps=args.phase_a_steps,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        log_interval=args.log_interval,
+        variant=cfg.variant,
+        steps=cfg.phase_a_steps,
+        batch_size=cfg.batch_size,
+        lr=cfg.lr,
+        log_interval=cfg.log_interval,
     )
-    case_meta = {
-        "dimension": 2,
-        "layout": "uniform",
-        "variant": args.variant,
-        "n_side": args.n_side,
-        "n_nodes": int(nodes_np.shape[0]),
-        "h": h,
-        "kappa": args.kappa,
-        "support_radius": support_radius,
-        "seed": args.seed,
-        "quadrature_order": args.quadrature_order,
-    }
+    case_meta = cfg.build_case_meta(
+        h=h,
+        support_radius=support_radius,
+        n_nodes=int(nodes_np.shape[0]),
+    )
     result = evaluate_shape_validation_case_2d(
         model=model,
         nodes=nodes_np,
         support_radius=support_radius,
-        grid_resolution=args.grid_resolution,
-        quadrature_order=args.quadrature_order,
+        grid_resolution=cfg.grid_resolution,
+        quadrature_order=cfg.quadrature_order,
         device=device,
         case_meta=case_meta,
     )
@@ -118,7 +107,11 @@ def main() -> None:
     summary_lines = build_shape_validation_summary_lines_2d(result["metrics"])
     save_run_bundle(
         artifacts=artifacts,
-        config=vars(args),
+        config=cfg.to_config_payload(
+            device=device,
+            case_name=case_name,
+            support_radius=support_radius,
+        ),
         metrics=result["metrics"],
         history=history,
         arrays=arrays,

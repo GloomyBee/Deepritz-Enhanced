@@ -4,10 +4,11 @@ import argparse
 
 import torch
 
+from experiments.shape_validation.two_d.config import get_shape_training_variant_2d
 from experiments.trial_space_value.two_d.basis import MeshfreeKAN2D, SinusoidalPoissonProblem2D, generate_square_nodes
+from experiments.trial_space_value.two_d.config import build_trial_space_value_2d_config
 from experiments.trial_space_value.two_d.common import (
     METHOD_LABELS,
-    build_case_name,
     build_metrics_payload,
     ensure_trial_space_artifacts,
     save_run_bundle,
@@ -19,7 +20,7 @@ from experiments.trial_space_value.two_d.plotting import (
     plot_solution_triplet,
     plot_training_curves,
 )
-from experiments.trial_space_value.two_d.training import history_to_arrays, resolve_variant_config, train_phase_a
+from experiments.trial_space_value.two_d.training import history_to_arrays, train_phase_a
 from experiments.trial_space_value.two_d.trial_space import build_trial_space_summary_lines, run_trial_method_case
 
 
@@ -57,39 +58,33 @@ def run_poisson_compare_method_entry(method: str, description: str) -> None:
     parser = build_parser(description)
     args = parser.parse_args()
 
-    seed_everything(args.seed)
+    cfg = build_trial_space_value_2d_config(args, method=method)
+    seed_everything(cfg.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     problem = SinusoidalPoissonProblem2D()
-    variant_cfg = resolve_variant_config(args.variant)
-    nodes_np, h = generate_square_nodes(n_side=args.n_side)
-    support_radius = args.kappa * h
-    case_name = build_case_name(
-        variant=args.variant,
-        method=method,
-        n_side=args.n_side,
-        kappa=args.kappa,
-        seed=args.seed,
-        tag=args.output_tag,
-    )
+    variant_cfg = get_shape_training_variant_2d(cfg.variant)
+    nodes_np, h = generate_square_nodes(n_side=cfg.n_side)
+    support_radius = cfg.support_radius(h)
+    case_name = cfg.case_name()
     artifacts = ensure_trial_space_artifacts("poisson_compare", case_name)
     nodes_t = torch.tensor(nodes_np, device=device)
     phase_a_model = MeshfreeKAN2D(
         nodes=nodes_t,
         support_radius=support_radius,
-        hidden_dim=args.hidden_dim,
-        use_softplus=variant_cfg["use_softplus"],
-        enable_fallback=variant_cfg["enable_fallback"],
+        hidden_dim=cfg.hidden_dim,
+        use_softplus=variant_cfg.use_softplus,
+        enable_fallback=variant_cfg.enable_fallback,
     ).to(device)
 
     phase_a_history = train_phase_a(
         model=phase_a_model,
         nodes=nodes_t,
         device=device,
-        variant=args.variant,
-        steps=args.phase_a_steps,
-        batch_size=args.batch_size,
-        lr=args.lr_phase_a,
-        log_interval=args.log_interval,
+        variant=cfg.variant,
+        steps=cfg.phase_a_steps,
+        batch_size=cfg.batch_size,
+        lr=cfg.lr_phase_a,
+        log_interval=cfg.log_interval,
     )
     plot_training_curves(
         phase_a_history,
@@ -107,47 +102,36 @@ def run_poisson_compare_method_entry(method: str, description: str) -> None:
         phase_a_model=phase_a_model,
         problem=problem,
         device=device,
-        phase_b_steps=args.phase_b_steps,
-        batch_size=args.batch_size,
-        lr_kan_b=args.lr_kan_b,
-        lr_w=args.lr_w,
-        beta_bc=args.beta_bc,
-        gamma_linear=args.gamma_linear,
-        warmup_w_steps=args.warmup_w_steps,
-        eval_interval=args.eval_interval,
-        eval_resolution=args.eval_resolution,
-        log_interval=args.log_interval,
-        domain_order=args.quadrature_order,
-        boundary_order=args.quadrature_order,
-        grid_resolution=args.grid_resolution,
+        phase_b_steps=cfg.phase_b_steps,
+        batch_size=cfg.batch_size,
+        lr_kan_b=cfg.lr_kan_b,
+        lr_w=cfg.lr_w,
+        beta_bc=cfg.beta_bc,
+        gamma_linear=cfg.gamma_linear,
+        warmup_w_steps=cfg.warmup_w_steps,
+        eval_interval=cfg.eval_interval,
+        eval_resolution=cfg.eval_resolution,
+        log_interval=cfg.log_interval,
+        domain_order=cfg.quadrature_order,
+        boundary_order=cfg.quadrature_order,
+        grid_resolution=cfg.grid_resolution,
     )
     metrics = build_metrics_payload(
-        case={
-            "dimension": 2,
-            "group": "poisson_compare",
-            "variant": args.variant,
-            "method": method,
-            "n_side": args.n_side,
-            "n_nodes": int(nodes_np.shape[0]),
-            "h": float(h),
-            "kappa": float(args.kappa),
-            "support_radius": float(support_radius),
-            "seed": args.seed,
-            "phase_a_steps": args.phase_a_steps,
-            "phase_b_steps": args.phase_b_steps,
-        },
+        case=cfg.build_case_payload(
+            h=float(h),
+            support_radius=float(support_radius),
+            n_nodes=int(nodes_np.shape[0]),
+        ),
         basis_quality=basis_quality,
         trial_space=trial_metrics,
-        method=method,
+        method=cfg.method,
     )
     summary_lines = build_trial_space_summary_lines(metrics)
-    config = {
-        **vars(args),
-        "method": method,
-        "device": device,
-        "case_name": case_name,
-        "support_radius": support_radius,
-    }
+    config = cfg.to_config_payload(
+        device=device,
+        case_name=case_name,
+        support_radius=support_radius,
+    )
     run_arrays = {
         **arrays,
         **_prefix_history_arrays("phase_a", phase_a_history),
@@ -167,7 +151,7 @@ def run_poisson_compare_method_entry(method: str, description: str) -> None:
         exact=arrays["exact"],
         history=method_history,
         metrics=trial_metrics,
-        title_prefix=METHOD_LABELS[method],
+        title_prefix=METHOD_LABELS[cfg.method],
         path=artifacts.figures_dir / "main_figure.png",
     )
     plot_solution_triplet(
@@ -176,7 +160,7 @@ def run_poisson_compare_method_entry(method: str, description: str) -> None:
         arrays["pred"],
         arrays["exact"],
         artifacts.diagnostics_dir / "solution_triplet.png",
-        METHOD_LABELS[method],
+        METHOD_LABELS[cfg.method],
     )
     plot_representative_shape_functions(
         model,
@@ -187,6 +171,6 @@ def run_poisson_compare_method_entry(method: str, description: str) -> None:
         plot_training_curves(
             method_history,
             artifacts.diagnostics_dir / "loss_curves.png",
-            METHOD_LABELS[method],
+            METHOD_LABELS[cfg.method],
         )
-    print(f"Saved {method} results to {artifacts.root_dir}")
+    print(f"Saved {cfg.method} results to {artifacts.root_dir}")

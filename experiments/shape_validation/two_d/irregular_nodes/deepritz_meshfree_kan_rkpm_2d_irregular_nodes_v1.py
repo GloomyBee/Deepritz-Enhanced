@@ -5,20 +5,21 @@ from pathlib import Path
 import numpy as np
 import torch
 
+BOOTSTRAP_ROOT = Path(__file__).resolve().parents[4]
+if str(BOOTSTRAP_ROOT) not in sys.path:
+    sys.path.append(str(BOOTSTRAP_ROOT))
 
-ROOT_DIR = Path(__file__).resolve().parents[4]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.append(str(ROOT_DIR))
-
+from experiments.shape_validation.two_d.config import (
+    build_irregular_shape_validation_2d_sweep_config,
+    get_shape_training_variant_2d,
+)
 from experiments.shape_validation.two_d.basis import (
     MeshfreeKAN2D,
     generate_square_nodes,
 )
 from experiments.shape_validation.two_d.common import (
     ROOT_DIR,
-    build_case_name,
     ensure_run_artifacts,
-    parse_float_list,
     save_json,
     save_run_bundle,
     save_summary,
@@ -38,7 +39,6 @@ from experiments.shape_validation.two_d.summary_plotting import (
     plot_summary_figure_shape_jitters_2d,
 )
 from experiments.shape_validation.two_d.training import (
-    resolve_variant_config,
     train_phase_a,
 )
 
@@ -60,62 +60,50 @@ def main() -> None:
     parser.add_argument("--output-tag", type=str, default="")
     args = parser.parse_args()
 
-    seed_everything(args.seed)
+    cfg = build_irregular_shape_validation_2d_sweep_config(args)
+    seed_everything(cfg.run_config.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    variant_cfg = resolve_variant_config(args.variant)
+    variant_cfg = get_shape_training_variant_2d(cfg.run_config.variant)
     group_root = ROOT_DIR / "output" / "shape_validation" / "two_d" / "irregular_nodes"
     group_root.mkdir(parents=True, exist_ok=True)
     summary_entries: list[dict[str, object]] = []
 
-    for jitter in parse_float_list(args.jitters):
-        nodes_np, h = generate_square_nodes(n_side=args.n_side, jitter=jitter, seed=args.seed)
-        support_radius = args.kappa * h
-        case_name = build_case_name(
-            variant=args.variant,
-            n_side=args.n_side,
-            kappa=args.kappa,
-            jitter=jitter,
-            seed=args.seed,
-            tag=args.output_tag,
-        )
+    for jitter in cfg.jitters:
+        run_cfg = cfg.case_config_for_jitter(jitter)
+        nodes_np, h = generate_square_nodes(n_side=run_cfg.n_side, jitter=jitter, seed=run_cfg.seed)
+        support_radius = run_cfg.support_radius(h)
+        case_name = run_cfg.case_name(jitter=jitter)
         artifacts = ensure_run_artifacts("irregular_nodes", case_name)
         nodes_t = torch.tensor(nodes_np, device=device)
         model = MeshfreeKAN2D(
             nodes=nodes_t,
             support_radius=support_radius,
-            hidden_dim=args.hidden_dim,
-            use_softplus=variant_cfg["use_softplus"],
-            enable_fallback=variant_cfg["enable_fallback"],
+            hidden_dim=run_cfg.hidden_dim,
+            use_softplus=variant_cfg.use_softplus,
+            enable_fallback=variant_cfg.enable_fallback,
         ).to(device)
         history = train_phase_a(
             model=model,
             nodes=nodes_t,
             device=device,
-            variant=args.variant,
-            steps=args.phase_a_steps,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            log_interval=args.log_interval,
+            variant=run_cfg.variant,
+            steps=run_cfg.phase_a_steps,
+            batch_size=run_cfg.batch_size,
+            lr=run_cfg.lr,
+            log_interval=run_cfg.log_interval,
         )
-        case_meta = {
-            "dimension": 2,
-            "layout": "irregular",
-            "variant": args.variant,
-            "n_side": args.n_side,
-            "n_nodes": int(nodes_np.shape[0]),
-            "h": h,
-            "kappa": args.kappa,
-            "support_radius": support_radius,
-            "jitter": jitter,
-            "seed": args.seed,
-            "quadrature_order": args.quadrature_order,
-        }
+        case_meta = run_cfg.build_case_meta(
+            h=h,
+            support_radius=support_radius,
+            n_nodes=int(nodes_np.shape[0]),
+            jitter=jitter,
+        )
         result = evaluate_shape_validation_case_2d(
             model=model,
             nodes=nodes_np,
             support_radius=support_radius,
-            grid_resolution=args.grid_resolution,
-            quadrature_order=args.quadrature_order,
+            grid_resolution=run_cfg.grid_resolution,
+            quadrature_order=run_cfg.quadrature_order,
             device=device,
             case_meta=case_meta,
         )
@@ -133,7 +121,12 @@ def main() -> None:
         summary_lines = build_shape_validation_summary_lines_2d(result["metrics"])
         save_run_bundle(
             artifacts=artifacts,
-            config=vars(args),
+            config=run_cfg.to_config_payload(
+                device=device,
+                case_name=case_name,
+                support_radius=support_radius,
+                jitter=jitter,
+            ),
             metrics=result["metrics"],
             history=history,
             arrays=arrays,

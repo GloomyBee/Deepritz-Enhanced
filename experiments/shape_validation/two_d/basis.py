@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from experiments.shape_validation.two_d.config import resolve_variant_config
 from core.splines import evaluate_open_uniform_bspline_basis
 
 from core.utils import ensure_repo_root_on_path
@@ -17,71 +18,6 @@ from core.utils import ensure_repo_root_on_path
 ROOT_DIR = ensure_repo_root_on_path(Path(__file__).resolve())
 
 torch.set_default_dtype(torch.float64)
-
-
-VARIANT_PRESETS = {
-    "softplus_raw_pu_bd": {
-        "use_softplus": True,
-        "enable_fallback": True,
-        "use_linear_loss": True,
-        "use_pu_loss": True,
-        "use_bd_loss": True,
-        "use_teacher_loss": False,
-        "lambda_pu": 0.1,
-        "lambda_bd": 1.0,
-        "lambda_teacher": 0.0,
-        "lambda_reg": 0.0,
-    },
-    "no_softplus_raw_pu_bd": {
-        "use_softplus": False,
-        "enable_fallback": True,
-        "use_linear_loss": True,
-        "use_pu_loss": True,
-        "use_bd_loss": True,
-        "use_teacher_loss": False,
-        "lambda_pu": 0.1,
-        "lambda_bd": 1.0,
-        "lambda_teacher": 0.0,
-        "lambda_reg": 0.0,
-    },
-    "no_softplus_teacher": {
-        "use_softplus": False,
-        "enable_fallback": True,
-        "use_linear_loss": False,
-        "use_pu_loss": False,
-        "use_bd_loss": True,
-        "use_teacher_loss": True,
-        "lambda_pu": 0.0,
-        "lambda_bd": 0.1,
-        "lambda_teacher": 1.0,
-        "lambda_reg": 1e-4,
-    },
-    "no_softplus_teacher_reg": {
-        "use_softplus": False,
-        "enable_fallback": True,
-        "use_linear_loss": False,
-        "use_pu_loss": False,
-        "use_bd_loss": True,
-        "use_teacher_loss": True,
-        "lambda_pu": 0.0,
-        "lambda_bd": 0.1,
-        "lambda_teacher": 1.0,
-        "lambda_reg": 5e-4,
-    },
-    "no_softplus_raw_pu_bd_no_fallback": {
-        "use_softplus": False,
-        "enable_fallback": False,
-        "use_linear_loss": True,
-        "use_pu_loss": True,
-        "use_bd_loss": True,
-        "use_teacher_loss": False,
-        "lambda_pu": 0.1,
-        "lambda_bd": 1.0,
-        "lambda_teacher": 0.0,
-        "lambda_reg": 0.0,
-    },
-}
-
 
 FIGURE_DPI = 180
 MAIN_FIGURE_SIZE = (12.0, 9.0)
@@ -432,13 +368,6 @@ def rkpm_shape_matrix_2d_torch(
     inverse = torch.linalg.pinv(moment, rtol=rcond)
     first_row = inverse[:, 0, :].unsqueeze(1)
     return torch.sum(first_row * p, dim=2) * weight
-
-
-def resolve_variant_config(name: str) -> dict[str, Any]:
-    if name not in VARIANT_PRESETS:
-        raise ValueError(f"Unknown variant: {name}")
-    return dict(VARIANT_PRESETS[name])
-
 
 def merge_histories(
     history_a: dict[str, list[float]],

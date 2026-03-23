@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
-
 import torch
 
+from experiments.shape_validation.two_d.config import resolve_variant_config
 from experiments.trial_space_value.two_d.basis import (
     MeshfreeKAN2D,
     SinusoidalPoissonProblem2D,
@@ -12,76 +11,6 @@ from experiments.trial_space_value.two_d.basis import (
     sample_mixed_domain_points,
     sample_square_boundary,
 )
-
-
-VARIANT_PRESETS = {
-    "softplus_raw_pu_bd": {
-        "use_softplus": True,
-        "enable_fallback": True,
-        "use_linear_loss": True,
-        "use_pu_loss": True,
-        "use_bd_loss": True,
-        "use_teacher_loss": False,
-        "lambda_pu": 0.1,
-        "lambda_bd": 1.0,
-        "lambda_teacher": 0.0,
-        "lambda_reg": 0.0,
-    },
-    "no_softplus_raw_pu_bd": {
-        "use_softplus": False,
-        "enable_fallback": True,
-        "use_linear_loss": True,
-        "use_pu_loss": True,
-        "use_bd_loss": True,
-        "use_teacher_loss": False,
-        "lambda_pu": 0.1,
-        "lambda_bd": 1.0,
-        "lambda_teacher": 0.0,
-        "lambda_reg": 0.0,
-    },
-    "no_softplus_teacher": {
-        "use_softplus": False,
-        "enable_fallback": True,
-        "use_linear_loss": False,
-        "use_pu_loss": False,
-        "use_bd_loss": True,
-        "use_teacher_loss": True,
-        "lambda_pu": 0.0,
-        "lambda_bd": 0.1,
-        "lambda_teacher": 1.0,
-        "lambda_reg": 1e-4,
-    },
-    "no_softplus_teacher_reg": {
-        "use_softplus": False,
-        "enable_fallback": True,
-        "use_linear_loss": False,
-        "use_pu_loss": False,
-        "use_bd_loss": True,
-        "use_teacher_loss": True,
-        "lambda_pu": 0.0,
-        "lambda_bd": 0.1,
-        "lambda_teacher": 1.0,
-        "lambda_reg": 5e-4,
-    },
-    "no_softplus_raw_pu_bd_no_fallback": {
-        "use_softplus": False,
-        "enable_fallback": False,
-        "use_linear_loss": True,
-        "use_pu_loss": True,
-        "use_bd_loss": True,
-        "use_teacher_loss": False,
-        "lambda_pu": 0.1,
-        "lambda_bd": 1.0,
-        "lambda_teacher": 0.0,
-        "lambda_reg": 0.0,
-    },
-}
-
-
-def resolve_variant_config(name: str) -> dict[str, Any]:
-    if name not in VARIANT_PRESETS:
-        raise ValueError(f"Unknown variant: {name}")
-    return dict(VARIANT_PRESETS[name])
 
 
 def merge_histories(

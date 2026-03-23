@@ -13,11 +13,12 @@ if str(BOOTSTRAP_ROOT) not in sys.path:
 import torch
 
 from experiments.trial_space_value.one_d.basis import evaluate_shape_validation_case_1d, generate_interval_nodes, history_to_arrays
+from experiments.trial_space_value.one_d.config import (
+    build_trial_space_value_1d_config,
+)
 from experiments.trial_space_value.one_d.common import (
-    build_case_name,
     build_metrics_payload,
     ensure_trial_space_artifacts_1d,
-    resolve_repo_root,
     save_run_bundle,
     seed_everything,
 )
@@ -47,79 +48,52 @@ def main() -> None:
     parser.add_argument("--output-tag", type=str, default="")
     args = parser.parse_args()
 
-    _ = resolve_repo_root(THIS_FILE)
-    seed_everything(args.seed)
+    cfg = build_trial_space_value_1d_config(args)
+    seed_everything(cfg.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    nodes, h = generate_interval_nodes(args.n_nodes)
-    support_radius = args.support_factor * h
-    tag = "_".join(item for item in [args.variant, args.output_tag.strip()] if item)
-    case_name = build_case_name(
-        n_nodes=args.n_nodes,
-        support_factor=args.support_factor,
-        method="fixed_basis",
-        seed=args.seed,
-        tag=tag,
-    )
+    nodes, h = generate_interval_nodes(cfg.n_nodes)
+    support_radius = cfg.support_radius(h)
+    case_name = cfg.case_name()
     artifacts = ensure_trial_space_artifacts_1d("poisson_compare", case_name)
 
     model = build_shape_model_1d(
         nodes=nodes,
         support_radius=support_radius,
-        hidden_dim=args.hidden_dim,
-        variant_name=args.variant,
+        hidden_dim=cfg.hidden_dim,
+        variant_name=cfg.variant,
         device=device,
     )
     history = train_shape_model_1d(
         model=model,
         nodes=model.nodes,
-        variant_name=args.variant,
+        variant_name=cfg.variant,
         device=device,
-        steps=args.steps,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        log_interval=args.log_interval,
+        steps=cfg.steps,
+        batch_size=cfg.batch_size,
+        lr=cfg.lr,
+        log_interval=cfg.log_interval,
     )
     shape_result = evaluate_shape_validation_case_1d(
         model=model,
         nodes=nodes,
         support_radius=support_radius,
-        n_eval=args.n_eval,
-        quadrature_order=args.quadrature_order,
+        n_eval=cfg.n_eval,
+        quadrature_order=cfg.quadrature_order,
         device=device,
-        case_meta={
-            "dimension": 1,
-            "layout": "uniform",
-            "variant": args.variant,
-            "n_nodes": args.n_nodes,
-            "h": h,
-            "support_factor": args.support_factor,
-            "support_radius": support_radius,
-            "quadrature_order": args.quadrature_order,
-            "seed": args.seed,
-        },
+        case_meta=cfg.build_shape_case_meta(h=h, support_radius=support_radius),
     )
     poisson_result = solve_fixed_basis_poisson_1d(
         model=model,
-        quadrature_order=args.quadrature_order,
-        eval_resolution=args.eval_resolution,
+        quadrature_order=cfg.quadrature_order,
+        eval_resolution=cfg.eval_resolution,
         device=device,
     )
-    case_payload = {
-        "dimension": 1,
-        "group": "poisson_compare",
-        "variant": args.variant,
-        "method": "fixed_basis",
-        "n_nodes": args.n_nodes,
-        "support_factor": args.support_factor,
-        "support_radius": support_radius,
-        "quadrature_order": args.quadrature_order,
-        "seed": args.seed,
-    }
+    case_payload = cfg.build_case_payload(support_radius=support_radius)
     metrics = build_metrics_payload(
         case=case_payload,
         basis_quality=shape_result["metrics"]["learned"]["shape"],
         trial_space=poisson_result["metrics"],
-        method="fixed_basis",
+        method=cfg.method,
     )
     arrays = {
         "shape_x_eval": shape_result["arrays"]["x_eval"],
@@ -130,25 +104,11 @@ def main() -> None:
     arrays.update(poisson_result["arrays"])
     arrays.update(history_to_arrays(history))
     summary_lines = build_poisson_summary_lines_1d(metrics)
-    config = {
-        "group": "poisson_compare",
-        "case_name": case_name,
-        "method": "fixed_basis",
-        "variant": args.variant,
-        "n_nodes": args.n_nodes,
-        "support_factor": args.support_factor,
-        "support_radius": support_radius,
-        "steps": args.steps,
-        "batch_size": args.batch_size,
-        "lr": args.lr,
-        "hidden_dim": args.hidden_dim,
-        "n_eval": args.n_eval,
-        "eval_resolution": args.eval_resolution,
-        "quadrature_order": args.quadrature_order,
-        "seed": args.seed,
-        "output_tag": args.output_tag,
-        "device": device,
-    }
+    config = cfg.to_config_payload(
+        device=device,
+        case_name=case_name,
+        support_radius=support_radius,
+    )
     save_run_bundle(
         artifacts=artifacts,
         config=config,

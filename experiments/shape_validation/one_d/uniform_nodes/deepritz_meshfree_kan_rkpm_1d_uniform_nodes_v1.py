@@ -12,10 +12,11 @@ if str(BOOTSTRAP_ROOT) not in sys.path:
 
 import torch
 
+from experiments.shape_validation.one_d.config import (
+    build_uniform_shape_validation_1d_config,
+)
 from experiments.shape_validation.one_d.common import (
-    build_case_name,
     ensure_run_artifacts,
-    resolve_repo_root,
     save_run_bundle,
     seed_everything,
 )
@@ -52,77 +53,49 @@ def main() -> None:
     parser.add_argument("--output-tag", type=str, default="")
     args = parser.parse_args()
 
-    _ = resolve_repo_root(THIS_FILE)
-    seed_everything(args.seed)
+    cfg = build_uniform_shape_validation_1d_config(args)
+    seed_everything(cfg.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    nodes, h = generate_interval_nodes(args.n_nodes)
-    support_radius = args.support_factor * h
-    tag = "_".join(item for item in ["uniform", args.variant, args.output_tag.strip()] if item)
-    case_name = build_case_name(
-        n_nodes=args.n_nodes,
-        support_factor=args.support_factor,
-        seed=args.seed,
-        tag=tag,
-    )
+    nodes, h = generate_interval_nodes(cfg.n_nodes)
+    support_radius = cfg.support_radius(h)
+    case_name = cfg.case_name()
     artifacts = ensure_run_artifacts("uniform_nodes", case_name)
 
     model = build_shape_model_1d(
         nodes=nodes,
         support_radius=support_radius,
-        hidden_dim=args.hidden_dim,
-        variant_name=args.variant,
+        hidden_dim=cfg.hidden_dim,
+        variant_name=cfg.variant,
         device=device,
     )
     history = train_shape_model_1d(
         model=model,
         nodes=model.nodes,
-        variant_name=args.variant,
+        variant_name=cfg.variant,
         device=device,
-        steps=args.steps,
-        batch_size=args.batch_size,
-        lr=args.lr,
-        log_interval=args.log_interval,
+        steps=cfg.steps,
+        batch_size=cfg.batch_size,
+        lr=cfg.lr,
+        log_interval=cfg.log_interval,
     )
-    case_meta = {
-        "dimension": 1,
-        "layout": "uniform",
-        "variant": args.variant,
-        "n_nodes": args.n_nodes,
-        "h": h,
-        "support_factor": args.support_factor,
-        "support_radius": support_radius,
-        "quadrature_order": args.quadrature_order,
-        "seed": args.seed,
-    }
+    case_meta = cfg.build_case_meta(h=h, support_radius=support_radius)
     result = evaluate_shape_validation_case_1d(
         model=model,
         nodes=nodes,
         support_radius=support_radius,
-        n_eval=args.n_eval,
-        quadrature_order=args.quadrature_order,
+        n_eval=cfg.n_eval,
+        quadrature_order=cfg.quadrature_order,
         device=device,
         case_meta=case_meta,
     )
     arrays = dict(result["arrays"])
     arrays.update(history_to_arrays(history))
     summary_lines = build_shape_validation_summary_lines_1d(result["metrics"])
-    config = {
-        "group": "uniform_nodes",
-        "case_name": case_name,
-        "n_nodes": args.n_nodes,
-        "support_factor": args.support_factor,
-        "support_radius": support_radius,
-        "variant": args.variant,
-        "steps": args.steps,
-        "batch_size": args.batch_size,
-        "lr": args.lr,
-        "hidden_dim": args.hidden_dim,
-        "n_eval": args.n_eval,
-        "quadrature_order": args.quadrature_order,
-        "seed": args.seed,
-        "output_tag": args.output_tag,
-        "device": device,
-    }
+    config = cfg.to_config_payload(
+        device=device,
+        case_name=case_name,
+        support_radius=support_radius,
+    )
     save_run_bundle(
         artifacts=artifacts,
         config=config,

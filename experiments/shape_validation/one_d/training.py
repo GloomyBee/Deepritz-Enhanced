@@ -1,26 +1,16 @@
 ﻿from __future__ import annotations
 
-from dataclasses import dataclass
-
 import torch
 
+from experiments.shape_validation.one_d.config import (
+    ShapeTrainingVariant1D,
+    get_shape_training_variant_1d,
+)
 from experiments.shape_validation.one_d.basis import (
     MeshfreeKAN1D,
     get_model_phi_stages,
     rkpm_shape_matrix_1d_torch,
 )
-
-
-@dataclass(frozen=True)
-class ShapeTrainingVariant1D:
-    name: str
-    objective: str
-    use_softplus: bool
-    lambda_pu: float = 0.0
-    lambda_bd: float = 0.0
-    lambda_teacher: float = 0.0
-    lambda_reg: float = 0.0
-    pu_on_raw: bool = False
 
 
 def init_history() -> dict[str, list[float]]:
@@ -33,58 +23,6 @@ def init_history() -> dict[str, list[float]]:
         "bd": [],
         "reg": [],
     }
-
-
-SHAPE_TRAINING_VARIANTS_1D: dict[str, ShapeTrainingVariant1D] = {
-    "raw_pu": ShapeTrainingVariant1D(
-        name="raw_pu",
-        objective="raw",
-        use_softplus=True,
-        lambda_pu=0.1,
-        lambda_bd=0.0,
-        pu_on_raw=False,
-    ),
-    "raw_pu_fix": ShapeTrainingVariant1D(
-        name="raw_pu_fix",
-        objective="raw",
-        use_softplus=True,
-        lambda_pu=0.1,
-        lambda_bd=0.0,
-        pu_on_raw=True,
-    ),
-    "boundary_anchor": ShapeTrainingVariant1D(
-        name="boundary_anchor",
-        objective="raw",
-        use_softplus=True,
-        lambda_pu=0.1,
-        lambda_bd=1.0,
-        pu_on_raw=True,
-    ),
-    "no_softplus": ShapeTrainingVariant1D(
-        name="no_softplus",
-        objective="raw",
-        use_softplus=False,
-        lambda_pu=0.1,
-        lambda_bd=1.0,
-        pu_on_raw=True,
-    ),
-    "teacher_distill": ShapeTrainingVariant1D(
-        name="teacher_distill",
-        objective="distill",
-        use_softplus=False,
-        lambda_teacher=1.0,
-        lambda_bd=0.1,
-        lambda_reg=1.0e-4,
-    ),
-}
-
-
-def get_shape_training_variant_1d(name: str) -> ShapeTrainingVariant1D:
-    key = name.strip().lower()
-    if key not in SHAPE_TRAINING_VARIANTS_1D:
-        raise KeyError(f"Unknown 1D training variant: {name}")
-    return SHAPE_TRAINING_VARIANTS_1D[key]
-
 
 def build_shape_model_1d(
     nodes,
